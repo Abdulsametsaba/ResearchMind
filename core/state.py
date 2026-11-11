@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/core/state.py
 Görevi: LangGraph Merkezi Durum (State) ve Pydantic Veri Modelleri
 ==============================================================================
 Bu dosya, ResearchMind'ın çok ajanlı iş akışında dolaşan ortak hafıza (State)

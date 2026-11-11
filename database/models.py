@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/database/models.py
 Görevi: SQLAlchemy 2.0 ORM Veritabanı Modelleri
 ==============================================================================
 Bu dosya, araştırma oturumlarının (sessions), bulunan akademik makalelerin,

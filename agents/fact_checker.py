@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/fact_checker.py
 Görevi: Kanıta Dayalı İddia ve Kaynak Doğrulama Ajanı (Fact Checker Agent)
 ==============================================================================
 Bu ajan, ResearchMind'ın en kritik farklılaştırıcı özelliğini icra eder:
@@ -23,9 +22,9 @@ import logging
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from ResearchMind.config.settings import get_settings
-from ResearchMind.core.llm import get_fast_llm
-from ResearchMind.core.state import (
+from config.settings import get_settings
+from core.llm import get_fast_llm
+from core.state import (
     ClaimVerification,
     ResearchState,
     AcademicPaperSource,

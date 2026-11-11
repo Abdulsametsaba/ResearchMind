@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/main.py
 Görevi: ResearchMind Ana Çalıştırma ve Komut Satırı Arayüzü (CLI Entrypoint)
 ==============================================================================
 Bu dosya, ResearchMind otonom araştırma sistemini komut satırından tetikler.
@@ -22,9 +21,9 @@ from rich.markdown import Markdown
 # Proje kök dizinini ekle
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from ResearchMind.config.settings import get_settings
-from ResearchMind.core.state import ResearchState
-from ResearchMind.orchestrator.graph import get_research_graph
+from config.settings import get_settings
+from core.state import ResearchState
+from orchestrator.graph import get_research_graph
 
 console = Console()
 

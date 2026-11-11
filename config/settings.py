@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/config/settings.py
 Görevi: Merkezi Konfigürasyon ve Ortam Değişkenleri Yönetimi
 ==============================================================================
 Bu dosya, Pydantic Settings kullanarak .env dosyasındaki veya sistem ortamındaki

@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/report_agent.py
 Görevi: Nihai Araştırma Raporu Üretim Ajanı (Report Generation Agent)
 ==============================================================================
 Bu ajan, araştırmanın tüm aşamalarını (Planlama, Makale Taraması, Web Taraması,
@@ -21,9 +20,9 @@ import logging
 from typing import Dict, List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from researchmind.config.settings import get_settings
-from researchmind.core.llm import get_planner_llm
-from researchmind.core.state import (
+from config.settings import get_settings
+from core.llm import get_planner_llm
+from core.state import (
     ResearchReport,
     ResearchState,
     AcademicPaperSource,

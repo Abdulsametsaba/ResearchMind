@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/web_researcher.py
 Görevi: Web Araştırmacı Ajanı (Web Researcher Agent)
 ==============================================================================
 Bu ajan, araştırma planındaki pratik, güncel ve web odaklı alt soruları işler:
@@ -14,9 +13,9 @@ Bu ajan, araştırma planındaki pratik, güncel ve web odaklı alt soruları i�
 
 import logging
 from typing import List
-from researchmind.config.settings import get_settings
-from researchmind.core.state import SubQuestion, WebSource, ResearchState
-from researchmind.tools.web_search import search_web_tavily
+from config.settings import get_settings
+from core.state import SubQuestion, WebSource, ResearchState
+from tools.web_search import search_web_tavily
 
 logger = logging.getLogger("ResearchMind.Agents.WebResearcher")
 

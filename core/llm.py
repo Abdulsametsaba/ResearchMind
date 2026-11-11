@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: ResearchMind/core/llm.py
 Görevi: Google Gemini LLM İstemci Fabrikası ve Model Yönetimi
 ==============================================================================
 Bu dosya, sistemdeki farklı roller (Planner, Researcher, Fact-Checker, Report)
@@ -16,7 +15,7 @@ yapılandırılarak maliyet ve hız optimizasyonu sağlanır.
 import os
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
-from ResearchMind.config.settings import get_settings
+from config.settings import get_settings
 
 
 def get_gemini_client(

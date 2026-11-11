@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/orchestrator/graph.py
 Görevi: LangGraph Çok Ajanlı İş Akışı ve Durum Yöneticisi (Supervisor Graph)
 ==============================================================================
 Bu dosya, ResearchMind projesinin tüm uzman ajanlarını (Planner, Paper Researcher,
@@ -27,14 +26,14 @@ from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from ResearchMind.config.settings import get_settings
-from ResearchMind.core.state import ResearchState, SubQuestion
-from ResearchMind.agents.planner import plan_research
-from ResearchMind.agents.paper_researcher import conduct_paper_research
-from ResearchMind.agents.web_researcher import conduct_web_research
-from ResearchMind.agents.analysis_agent import conduct_analysis
-from ResearchMind.agents.fact_checker import verify_claims
-from ResearchMind.agents.report_agent import generate_research_report
+from config.settings import get_settings
+from core.state import ResearchState, SubQuestion
+from agents.planner import plan_research
+from agents.paper_researcher import conduct_paper_research
+from agents.web_researcher import conduct_web_research
+from agents.analysis_agent import conduct_analysis
+from agents.fact_checker import verify_claims
+from agents.report_agent import generate_research_report
 
 logger = logging.getLogger("ResearchMind.Orchestrator")
 

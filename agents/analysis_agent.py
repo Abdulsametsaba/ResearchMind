@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/analysis_agent.py
 Görevi: Karşılaştırmalı Analiz ve Boşluk Tespiti Ajanı (Analysis Agent)
 ==============================================================================
 Bu ajan, Paper Researcher ve Web Researcher tarafından toplanan tüm ham
@@ -22,9 +21,9 @@ import logging
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from ResearchMind.config.settings import get_settings
-from ResearchMind.core.llm import get_planner_llm
-from ResearchMind.core.state import ResearchState, AcademicPaperSource, WebSource
+from config.settings import get_settings
+from core.llm import get_planner_llm
+from core.state import ResearchState, AcademicPaperSource, WebSource
 
 logger = logging.getLogger("ResearchMind.Agents.AnalysisAgent")
 

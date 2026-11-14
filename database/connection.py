@@ -21,8 +21,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy import text
-from researchmind.config.settings import get_settings
-from researchmind.database.models import Base
+from config.settings import get_settings
+from database.models import Base
 
 logger = logging.getLogger("ResearchMind.Database")
 

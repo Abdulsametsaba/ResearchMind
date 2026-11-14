@@ -21,9 +21,9 @@ import logging
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from researchmind.config.settings import get_settings
-from researchmind.core.llm import get_planner_llm
-from researchmind.core.state import SubQuestion, ResearchState
+from config.settings import get_settings
+from core.llm import get_planner_llm
+from core.state import SubQuestion, ResearchState
 
 logger = logging.getLogger("ResearchMind.Agents.Planner")
 

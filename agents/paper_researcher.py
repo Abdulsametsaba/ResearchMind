@@ -21,16 +21,16 @@ Bu ajan, araştırma planındaki akademik odaklı alt soruları işler:
 import logging
 from typing import List
 from langchain_core.messages import SystemMessage, HumanMessage
-from researchmind.config.settings import get_settings
-from researchmind.core.llm import get_fast_llm
-from researchmind.core.state import (
+from config.settings import get_settings
+from core.llm import get_fast_llm
+from core.state import (
     AcademicPaperSource,
     ExtractedPaperIntel,
     SubQuestion,
     ResearchState
 )
-from researchmind.tools.academic_search import search_academic_papers
-from researchmind.tools.pdf_reader import download_and_extract_pdf_text, extract_targeted_sections
+from tools.academic_search import search_academic_papers
+from tools.pdf_reader import download_and_extract_pdf_text, extract_targeted_sections
 
 logger = logging.getLogger("ResearchMind.Agents.PaperResearcher")
 

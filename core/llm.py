@@ -16,7 +16,7 @@ yapılandırılarak maliyet ve hız optimizasyonu sağlanır.
 import os
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
-from researchmind.config.settings import get_settings
+from config.settings import get_settings
 
 
 def get_gemini_client(

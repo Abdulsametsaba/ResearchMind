@@ -17,8 +17,8 @@ import logging
 from typing import List
 import arxiv
 import httpx
-from researchmind.config.settings import get_settings
-from researchmind.core.state import AcademicPaperSource
+from config.settings import get_settings
+from core.state import AcademicPaperSource
 
 logger = logging.getLogger("ResearchMind.Tools.AcademicSearch")
 

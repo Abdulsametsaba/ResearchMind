@@ -15,8 +15,8 @@ API anahtarı eksik olduğunda çökmek yerine kullanıcıyı net şekilde uyar�
 import logging
 from typing import List
 from tavily import TavilyClient
-from researchmind.config.settings import get_settings
-from researchmind.core.state import WebSource
+from config.settings import get_settings
+from core.state import WebSource
 
 logger = logging.getLogger("ResearchMind.Tools.WebSearch")
 

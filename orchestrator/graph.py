@@ -27,15 +27,15 @@ from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from researchmind.config.settings import get_settings
-from researchmind.core.state import ResearchState, SubQuestion
-from researchmind.agents.planner import plan_research
-from researchmind.agents.paper_researcher import conduct_paper_research
-from researchmind.agents.web_researcher import conduct_web_research
-from researchmind.agents.analysis_agent import conduct_analysis
-from researchmind.agents.fact_checker import verify_claims
-from researchmind.agents.narrative_agent import generate_research_narrative
-from researchmind.agents.report_agent import generate_research_report
+from config.settings import get_settings
+from core.state import ResearchState, SubQuestion
+from agents.planner import plan_research
+from agents.paper_researcher import conduct_paper_research
+from agents.web_researcher import conduct_web_research
+from agents.analysis_agent import conduct_analysis
+from agents.fact_checker import verify_claims
+from agents.narrative_agent import generate_research_narrative
+from agents.report_agent import generate_research_report
 
 logger = logging.getLogger("ResearchMind.Orchestrator")
 

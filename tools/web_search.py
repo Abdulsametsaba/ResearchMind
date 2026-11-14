@@ -1,6 +1,6 @@
 """
 ==============================================================================
-Dosya: ResearchMind/tools/web_search.py
+Dosya: researchmind/tools/web_search.py
 Görevi: Tavily AI Web Arama ve İçerik Toplama Aracı
 ==============================================================================
 Bu araç, internet üzerindeki en güncel teknik blogları, resmi dökümantasyonları,
@@ -13,10 +13,10 @@ API anahtarı eksik olduğunda çökmek yerine kullanıcıyı net şekilde uyar�
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 from tavily import TavilyClient
-from ResearchMind.config.settings import get_settings
-from ResearchMind.core.state import WebSource
+from researchmind.config.settings import get_settings
+from researchmind.core.state import WebSource
 
 logger = logging.getLogger("ResearchMind.Tools.WebSearch")
 

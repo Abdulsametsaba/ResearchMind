@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/database/models.py
 Görevi: SQLAlchemy 2.0 ORM Veritabanı Modelleri
 ==============================================================================
 Bu dosya, araştırma oturumlarının (sessions), bulunan akademik makalelerin,
@@ -9,7 +10,7 @@ PostgreSQL üzerinde kalıcı olarak saklanmasını sağlayan tabloları tanıml
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from sqlalchemy import (
     String,
@@ -18,9 +19,15 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
-    Boolean
+    Index,
+    UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def _utcnow() -> datetime:
+    """timezone-aware UTC şimdiki zamanı döner (Python 3.12+ uyumlu)."""
+    return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
@@ -42,8 +49,12 @@ class ResearchSession(Base):
         comment="pending, running, completed, failed"
     )
     iteration_count: Mapped[int] = mapped_column(default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_sessions_status", "status"),
+    )
 
     # İlişkiler
     academic_papers: Mapped[List["AcademicPaperModel"]] = relationship(
@@ -81,7 +92,11 @@ class AcademicPaperModel(Base):
         comment="Model mimarisi, veri seti, metrikler ve limitasyonlar"
     )
     relevance_score: Mapped[float] = mapped_column(Float, default=1.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "paper_id", name="uq_session_paper"),
+    )
 
     # İlişki
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="academic_papers")
@@ -99,7 +114,7 @@ class WebSourceModel(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     snippet: Mapped[str] = mapped_column(Text, nullable=False)
     relevance_score: Mapped[float] = mapped_column(Float, default=1.0)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # İlişki
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="web_sources")
@@ -121,7 +136,11 @@ class ClaimVerificationModel(Base):
     )
     confidence_score: Mapped[float] = mapped_column(Float, default=1.0)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_claims_verification_status", "verification_status"),
+    )
 
     # İlişki
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="claim_verifications")
@@ -139,7 +158,7 @@ class ResearchReportModel(Base):
     executive_summary: Mapped[str] = mapped_column(Text, nullable=False)
     report_markdown: Mapped[str] = mapped_column(Text, nullable=False)
     report_metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     # İlişki
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="report")

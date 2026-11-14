@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/orchestrator/graph.py
 Görevi: LangGraph Çok Ajanlı İş Akışı ve Durum Yöneticisi (Supervisor Graph)
 ==============================================================================
 Bu dosya, ResearchMind projesinin tüm uzman ajanlarını (Planner, Paper Researcher,
@@ -26,14 +27,15 @@ from typing import Literal
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from config.settings import get_settings
-from core.state import ResearchState, SubQuestion
-from agents.planner import plan_research
-from agents.paper_researcher import conduct_paper_research
-from agents.web_researcher import conduct_web_research
-from agents.analysis_agent import conduct_analysis
-from agents.fact_checker import verify_claims
-from agents.report_agent import generate_research_report
+from researchmind.config.settings import get_settings
+from researchmind.core.state import ResearchState, SubQuestion
+from researchmind.agents.planner import plan_research
+from researchmind.agents.paper_researcher import conduct_paper_research
+from researchmind.agents.web_researcher import conduct_web_research
+from researchmind.agents.analysis_agent import conduct_analysis
+from researchmind.agents.fact_checker import verify_claims
+from researchmind.agents.narrative_agent import generate_research_narrative
+from researchmind.agents.report_agent import generate_research_report
 
 logger = logging.getLogger("ResearchMind.Orchestrator")
 
@@ -102,6 +104,7 @@ def build_researchmind_graph():
     workflow.add_node("analysis", conduct_analysis)
     workflow.add_node("gap_reframer", gap_reframing_node)
     workflow.add_node("fact_checker", verify_claims)
+    workflow.add_node("narrative_agent", generate_research_narrative)
     workflow.add_node("report_generator", generate_research_report)
 
     # Kenarları Tanımla (Edges)
@@ -121,8 +124,9 @@ def build_researchmind_graph():
     )
     workflow.add_edge("gap_reframer", "paper_researcher")
 
-    # Doğrulama ve Raporlama
-    workflow.add_edge("fact_checker", "report_generator")
+    # Doğrulama → Anlatı Sentezi → Raporlama
+    workflow.add_edge("fact_checker", "narrative_agent")
+    workflow.add_edge("narrative_agent", "report_generator")
     workflow.add_edge("report_generator", END)
 
     # Durum Hafızası (Memory Checkpointer)

@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/agents/analysis_agent.py
 Görevi: Karşılaştırmalı Analiz ve Boşluk Tespiti Ajanı (Analysis Agent)
 ==============================================================================
 Bu ajan, Paper Researcher ve Web Researcher tarafından toplanan tüm ham
@@ -21,9 +22,9 @@ import logging
 from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from config.settings import get_settings
-from core.llm import get_planner_llm
-from core.state import ResearchState, AcademicPaperSource, WebSource
+from researchmind.config.settings import get_settings
+from researchmind.core.llm import get_planner_llm
+from researchmind.core.state import ResearchState, AcademicPaperSource, WebSource
 
 logger = logging.getLogger("ResearchMind.Agents.AnalysisAgent")
 
@@ -164,9 +165,9 @@ def generate_heuristic_analysis(state: ResearchState, evidence_text: str) -> dic
 
     summary = (
         f"İncelenen {len(papers)} akademik kaynak ve web dökümanları doğrultusunda; "
-        "Vision-Language modellerinin genel olarak yüksek çözünürlüklü görsel kodlayıcılar "
-        "ile önceden eğitilmiş büyük dil modellerini çapraz dikkat (cross-attention) veya "
-        "MLP projektör katmanlarıyla birleştirdiği görülmüştür."
+        f"'{state.get('research_query', 'araştırma konusu')}' alanında çeşitli yaklaşımlar karşılaştırılmıştır. "
+        "Toplanan kanıtlar, farklı mimari ve metodolojik tercihler ile bunların performans, verimlilik ve "
+        "ölçeklenebilirlik açısından güçlü ve zayıf yönlerini ortaya koymaktadır."
     )
 
     # İlk iterasyonda test amaçlı yeterli sayılabilir veya max_iterations'a göre karar verilir

@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/core/state.py
 Görevi: LangGraph Merkezi Durum (State) ve Pydantic Veri Modelleri
 ==============================================================================
 Bu dosya, ResearchMind'ın çok ajanlı iş akışında dolaşan ortak hafıza (State)
@@ -13,7 +14,7 @@ birlikte kullanılmıştır.
 """
 
 import operator
-from typing import Annotated, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
@@ -201,6 +202,9 @@ class ResearchState(TypedDict):
 
     # Nihai Çıktı
     final_report: Optional[ResearchReport]
+
+    # Araştırma Anlatısı (Narrative Agent çıktısı)
+    research_narrative: Optional[Any]
 
     # Denetim ve Adım Logları
     audit_logs: Annotated[List[str], operator.add]

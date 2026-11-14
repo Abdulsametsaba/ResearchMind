@@ -1,3 +1,11 @@
+"""
+==============================================================================
+ResearchMind - Çekirdek (Core) Modülü
+==============================================================================
+Bu modül, LangGraph State yapısını ve LLM istemcisi yönetim fabrikasını içerir.
+==============================================================================
+"""
+
 from .state import (
     ResearchState,
     SubQuestion,
@@ -7,7 +15,6 @@ from .state import (
     ClaimVerification,
     ResearchReport
 )
-
 from .llm import get_planner_llm, get_fast_llm
 
 __all__ = [
@@ -21,3 +28,4 @@ __all__ = [
     "get_planner_llm",
     "get_fast_llm",
 ]
+

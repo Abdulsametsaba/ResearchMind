@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/agents/planner.py
 Görevi: Araştırma Planlayıcı Ajan (Research Planner Agent)
 ==============================================================================
 Bu ajan, kullanıcının girdiği karmaşık araştırma sorusunu analiz eder ve
@@ -17,12 +18,12 @@ kapsamlı bir araştırma stratejisi kurgular.
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from config.settings import get_settings
-from core.llm import get_planner_llm
-from core.state import SubQuestion, ResearchState
+from researchmind.config.settings import get_settings
+from researchmind.core.llm import get_planner_llm
+from researchmind.core.state import SubQuestion, ResearchState
 
 logger = logging.getLogger("ResearchMind.Agents.Planner")
 

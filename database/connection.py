@@ -12,7 +12,6 @@ farklı event-loop'larda veya testlerde bağlantı havuzu kilitlenmeleri önleni
 ==============================================================================
 """
 
-import asyncio
 import logging
 from typing import AsyncGenerator, Optional, Tuple
 from sqlalchemy.ext.asyncio import (
@@ -22,8 +21,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy import text
-from config.settings import get_settings
-from database.models import Base
+from researchmind.config.settings import get_settings
+from researchmind.database.models import Base
 
 logger = logging.getLogger("ResearchMind.Database")
 

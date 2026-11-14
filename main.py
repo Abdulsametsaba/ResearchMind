@@ -126,8 +126,7 @@ def run_research(query: str, guidance: Optional[str] = None) -> ResearchState:
 
 if __name__ == "__main__":
     default_query = (
-        "2023-2026 yılları arasında geliştirilen Vision-Language modellerini araştır. "
-        "Mimari yaklaşımlarını, eğitim yöntemlerini, performanslarını ve birbirlerine göre avantajlarını karşılaştır."
+        "Çoklu ajan sistemlerinde (Multi-Agent Systems) otonom ajanların uzun vadeli bellek yönetimi (episodik ve semantik bellek) için kullanılan güncel mimariler nelerdir ve bu yöntemler görev tamamlama başarısını nasıl etkiler? "
     )
     user_query = sys.argv[1] if len(sys.argv) > 1 else default_query
     run_research(user_query)

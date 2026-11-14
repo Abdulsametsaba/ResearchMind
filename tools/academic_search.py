@@ -14,11 +14,11 @@ API anahtarı olmasa dahi arXiv API üzerinden ücretsiz ve sınırsız sorgulam
 """
 
 import logging
-from typing import List, Optional
+from typing import List
 import arxiv
 import httpx
-from ResearchMind.config.settings import get_settings
-from ResearchMind.core.state import AcademicPaperSource
+from researchmind.config.settings import get_settings
+from researchmind.core.state import AcademicPaperSource
 
 logger = logging.getLogger("ResearchMind.Tools.AcademicSearch")
 

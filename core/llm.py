@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/core/llm.py
 Görevi: Google Gemini LLM İstemci Fabrikası ve Model Yönetimi
 ==============================================================================
 Bu dosya, sistemdeki farklı roller (Planner, Researcher, Fact-Checker, Report)
@@ -15,7 +16,7 @@ yapılandırılarak maliyet ve hız optimizasyonu sağlanır.
 import os
 from typing import Optional
 from langchain_google_genai import ChatGoogleGenerativeAI
-from config.settings import get_settings
+from researchmind.config.settings import get_settings
 
 
 def get_gemini_client(
@@ -64,7 +65,7 @@ def get_planner_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
     return get_gemini_client(
         model_name=settings.GEMINI_MODEL_PLANNER,
-        temperature=0.2
+        #temperature=0.2
     )
 
 
@@ -76,6 +77,6 @@ def get_fast_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
     return get_gemini_client(
         model_name=settings.GEMINI_MODEL_FAST,
-        temperature=0.1
+        #temperature=0.1
     )
 

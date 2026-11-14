@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/config/settings.py
 Görevi: Merkezi Konfigürasyon ve Ortam Değişkenleri Yönetimi
 ==============================================================================
 Bu dosya, Pydantic Settings kullanarak .env dosyasındaki veya sistem ortamındaki
@@ -9,7 +10,6 @@ doğrulanmış ayar nesnesi sağlar.
 ==============================================================================
 """
 
-import os
 from functools import lru_cache
 from typing import Optional
 from pydantic import Field
@@ -39,11 +39,11 @@ class Settings(BaseSettings):
         description="Google AI Studio Gemini API anahtarı"
     )
     GEMINI_MODEL_PLANNER: str = Field(
-        default="gemini-2.5-pro",
+        default="gemini-3.6-flash",
         description="Planlama, sentez ve rapor yazımı için kullanılan ana model"
     )
     GEMINI_MODEL_FAST: str = Field(
-        default="gemini-2.5-flash",
+        default="gemini-3.1-flash-lite",
         description="Hızlı alt sorgu üretimi, özetleme ve fact-check için model"
     )
     GEMINI_TEMPERATURE: float = Field(

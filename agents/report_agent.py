@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/agents/report_agent.py
 Görevi: Nihai Araştırma Raporu Üretim Ajanı (Report Generation Agent)
 ==============================================================================
 Bu ajan, araştırmanın tüm aşamalarını (Planlama, Makale Taraması, Web Taraması,
@@ -20,9 +21,9 @@ import logging
 from typing import Dict, List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
-from config.settings import get_settings
-from core.llm import get_planner_llm
-from core.state import (
+from researchmind.config.settings import get_settings
+from researchmind.core.llm import get_planner_llm
+from researchmind.core.state import (
     ResearchReport,
     ResearchState,
     AcademicPaperSource,
@@ -75,6 +76,8 @@ def generate_research_report(state: ResearchState) -> dict:
     """
     LangGraph düğümü: Tüm durumu toplar, nihai araştırma raporunu oluşturur
     ve 'final_report' olarak kaydeder.
+    Narrative Agent'ın ürettiği anlatı (research_narrative) raporda
+    'Araştırma Anlatısı' bölümü olarak entegre edilir.
     """
     query = state.get("research_query", "")
     analysis_text = state.get("analysis_summary", "")
@@ -82,6 +85,7 @@ def generate_research_report(state: ResearchState) -> dict:
     verifications: List[ClaimVerification] = state.get("claim_verifications", [])
     papers: List[AcademicPaperSource] = state.get("academic_sources", [])
     web_sources: List[WebSource] = state.get("web_sources", [])
+    narrative = state.get("research_narrative")  # Narrative Agent çıktısı
     settings = get_settings()
 
     logger.info("Report Generation Agent nihai raporu derliyor...")
@@ -132,7 +136,8 @@ def generate_research_report(state: ResearchState) -> dict:
             comp_table_md=comp_table_md,
             verification_matrix_md=verification_matrix_md,
             bibliography=bibliography,
-            papers=papers
+            papers=papers,
+            narrative=narrative
         )
         return {
             "final_report": report,
@@ -145,10 +150,21 @@ def generate_research_report(state: ResearchState) -> dict:
 
         sources_summary = "\n".join([b["citation"] for b in bibliography])
 
+        # Narrative bilgisini prompt'a ekle (varsa)
+        narrative_context = ""
+        if narrative:
+            narrative_context = (
+                f"\n\nAraştırma Anlatı Bağlamı (Narrative Agent çıktısı):\n"
+                f"Alan Bağlamı: {narrative.field_context}\n"
+                f"Araştırma Hikayesi: {narrative.research_story}\n"
+                f"Kritik İçgörüler: {'; '.join(narrative.key_insights)}\n"
+            )
+
         user_content = (
             f"Araştırma Konusu: {query}\n\n"
             f"Analiz ve Sentez Bulguları:\n{analysis_text}\n\n"
-            f"Kullanılan Doğrulanmış Kaynaklar:\n{sources_summary}\n\n"
+            f"Kullanılan Doğrulanmış Kaynaklar:\n{sources_summary}"
+            f"{narrative_context}\n\n"
             f"Lütfen yukarıdaki bulguları kullanarak profesyonel, bölümlere ayrılmış akademik bir araştırma raporu metni oluştur."
         )
 
@@ -157,8 +173,26 @@ def generate_research_report(state: ResearchState) -> dict:
             HumanMessage(content=user_content)
         ])
 
-        # LLM çıktısını deterministik tablolar ve kaynakça ile birleştir
-        sections_dict_list = [{"heading": s.heading, "content": s.content} for s in synthesis.sections]
+        # Narrative bölümünü rapora entegre et
+        sections_dict_list = []
+        if narrative:
+            # Araştırma Anlatısı bölümü — raporun ilk bölümü olarak eklenir
+            insights_md = "\n".join([f"- {ins}" for ins in narrative.key_insights])
+            narrative_section = {
+                "heading": "0. Araştırma Bağlamı ve Anlatısı",
+                "content": (
+                    f"### Alan Bağlamı\n{narrative.field_context}\n\n"
+                    f"### Araştırmanın Hikayesi\n{narrative.research_story}\n\n"
+                    f"### Kritik İçgörüler\n{insights_md}\n\n"
+                    f"### Sentez\n{narrative.synthesis_paragraph}"
+                )
+            }
+            sections_dict_list.append(narrative_section)
+
+        sections_dict_list += [{
+            "heading": s.heading,
+            "content": s.content
+        } for s in synthesis.sections]
 
         report = ResearchReport(
             title=synthesis.title,
@@ -198,17 +232,35 @@ def generate_heuristic_report(
     comp_table_md: str,
     verification_matrix_md: str,
     bibliography: List[Dict[str, str]],
-    papers: List[AcademicPaperSource]
+    papers: List[AcademicPaperSource],
+    narrative=None
 ) -> ResearchReport:
-    """API erişimi olmadığında veya hata anında yüksek kaliteli deterministik rapor üretir."""
+    """API erişimi olmadığında veya hata anında yüksek kaliteli deterministik rapor üretir.
+    Narrative Agent çıktısı varsa ilk bölüm olarak rapora eklenir.
+    """
     title = f"Derin Araştırma Raporu: {query}"
     exec_summary = (
         f"Bu rapor, '{query}' sorusunu aydınlatmak üzere akademik literatürden ve güvenilir web kaynaklarından "
         f"elde edilen kanıtların çapraz analiziyle hazırlanmıştır. İncelenen {len(papers)} akademik çalışma, "
-        "multimodal mimarilerin parametre verimliliği ve ölçeklenme kabiliyetleri üzerine kritik içgörüler sunmaktadır."
+        "araştırma konusunun parametre verimliliği ve ölçeklenme kabiliyetleri üzerine kritik içgörüler sunmaktadır."
     )
 
-    sections = [
+    sections = []
+
+    # Narrative Agent çıktısı varsa ilk bölüm olarak ekle
+    if narrative:
+        insights_md = "\n".join([f"- {ins}" for ins in narrative.key_insights])
+        sections.append({
+            "heading": "0. Araştırma Bağlamı ve Anlatısı",
+            "content": (
+                f"### Alan Bağlamı\n{narrative.field_context}\n\n"
+                f"### Araştırmanın Hikayesi\n{narrative.research_story}\n\n"
+                f"### Kritik İçgörüler\n{insights_md}\n\n"
+                f"### Sentez\n{narrative.synthesis_paragraph}"
+            )
+        })
+
+    sections += [
         {
             "heading": "1. Giriş ve Araştırma Kapsamı",
             "content": (
@@ -221,15 +273,15 @@ def generate_heuristic_report(
             "heading": "2. Temel Mimari Yaklaşımlar ve Yenilikler",
             "content": (
                 "İncelenen çalışmalarda öne çıkan en belirgin mimari eğilim, önceden eğitilmiş yüksek çözünürlüklü "
-                "görsel kodlayıcıların (ViT, SigLIP) birleştirici projektörler (MLP veya Cross-Attention) aracılığıyla "
-                "büyük dil modeli omurgalarına (LLM) bağlanmasıdır [1]. Bu yapı, token verimliliğini korurken görsel bağlam "
+                "kodlayıcıların birleştirici projektörler (MLP veya Cross-Attention) aracılığıyla "
+                "büyük dil modeli omurgalarına bağlanmasıdır [1]. Bu yapı, token verimliliğini korurken bağlam "
                 "kaybını minimize etmektedir."
             )
         },
         {
             "heading": "3. Eğitim Metodolojileri ve Veri Kümeleri",
             "content": (
-                "Eğitim süreçleri genellikle iki ana evreden oluşmaktadır: Geniş ölçekli görsel-metin çiftleriyle yapılan "
+                "Eğitim süreçleri genellikle iki ana evreden oluşmaktadır: Geniş ölçekli veri çiftleriyle yapılan "
                 "ön eğitim (Pre-training) ve yüksek kaliteli sentetik/talimat verileriyle uygulanan denetimli ince ayar (SFT) [2]. "
                 "Son dönemde Direct Preference Optimization (DPO) gibi doğrudan tercih optimizasyonları ile halüsinasyon "
                 "oranlarının ciddi oranda düşürüldüğü görülmektedir."
@@ -242,8 +294,8 @@ def generate_heuristic_report(
     ]
 
     limitations = (
-        "Mevcut yaklaşımların en belirgin kısıtları; yüksek çözünürlüklü doküman ve video analizinde artan hesaplama maliyeti, "
-        "uzun bağlam pencerelerinde dikkat zayıflaması ve çok dilli görsel anlama benchmarklarındaki veri yetersizliğidir."
+        "Mevcut yaklaşımların en belirgin kısıtları; yüksek çözünürlüklü içerik analizinde artan hesaplama maliyeti, "
+        "uzun bağlam pencerelerinde dikkat zayıflaması ve çok dilli değerlendirme benchmarklarındaki veri yetersizliğidir."
     )
 
     return ResearchReport(

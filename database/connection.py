@@ -124,6 +124,7 @@ async def check_db_health() -> Tuple[bool, str]:
 async def init_db() -> None:
     """
     Veritabanı tablolarını ve varsa pgvector eklentisini oluşturur.
+    Faz-6: Mevcut tablolara embedding sütunlarını ekleyen migration çalıştırır.
     """
     engine = get_engine()
     async with engine.begin() as conn:
@@ -137,3 +138,19 @@ async def init_db() -> None:
         # Tüm modellerin tablolarını oluştur
         await conn.run_sync(Base.metadata.create_all)
         logger.info("Tüm veritabanı tabloları başarıyla oluşturuldu.")
+
+        # ── Faz-6 Migration: Mevcut tablolara embedding sütunları ekle ──────────
+        # CREATE TABLE IF NOT EXISTS mevcut tablolara yeni sütun eklemez;
+        # ALTER TABLE + ADD COLUMN IF NOT EXISTS güvenli şekilde çalışır.
+        try:
+            await conn.execute(text(
+                "ALTER TABLE academic_papers "
+                "ADD COLUMN IF NOT EXISTS embedding vector(768);"
+            ))
+            await conn.execute(text(
+                "ALTER TABLE web_sources "
+                "ADD COLUMN IF NOT EXISTS embedding vector(768);"
+            ))
+            logger.info("Faz-6 migration: embedding sütunları doğrulandı/eklendi.")
+        except Exception as e:
+            logger.warning(f"Faz-6 migration sırasında hata (embedding sütunları): {e}")

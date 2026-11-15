@@ -6,6 +6,13 @@ Görevi: SQLAlchemy 2.0 ORM Veritabanı Modelleri
 Bu dosya, araştırma oturumlarının (sessions), bulunan akademik makalelerin,
 web kaynaklarının, kanıt kartlarının (fact-check claims) ve nihai raporların
 PostgreSQL üzerinde kalıcı olarak saklanmasını sağlayan tabloları tanımlar.
+
+Faz-6 (Semantic Memory) eklemeleri:
+  - AcademicPaperModel.embedding  → VECTOR(768) — makale özet vektörü
+  - WebSourceModel.embedding      → VECTOR(768) — kaynak snippet vektörü
+  Vektörler araştırma tamamlandıktan sonra Gemini text-embedding-004 ile
+  üretilip pgvector'a kaydedilir. Yeni araştırmalarda Memory Retriever
+  Agent benzer kaynakları bu sütunlar üzerinden cosine similarity ile bulur.
 ==============================================================================
 """
 
@@ -23,6 +30,10 @@ from sqlalchemy import (
     UniqueConstraint
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
+
+# Gemini text-embedding-004 ve pgvector boyutu
+EMBEDDING_DIM = 768
 
 
 def _utcnow() -> datetime:
@@ -94,6 +105,13 @@ class AcademicPaperModel(Base):
     relevance_score: Mapped[float] = mapped_column(Float, default=1.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
+    # Faz-6: Semantic Memory — makale başlık+abstract vektörü (nullable, sonradan doldurulur)
+    embedding: Mapped[Optional[Any]] = mapped_column(
+        Vector(EMBEDDING_DIM),
+        nullable=True,
+        comment="Gemini text-embedding-004 ile üretilen 768-boyutlu anlamsal vektör"
+    )
+
     __table_args__ = (
         UniqueConstraint("session_id", "paper_id", name="uq_session_paper"),
     )
@@ -115,6 +133,13 @@ class WebSourceModel(Base):
     snippet: Mapped[str] = mapped_column(Text, nullable=False)
     relevance_score: Mapped[float] = mapped_column(Float, default=1.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    # Faz-6: Semantic Memory — web kaynağı başlık+snippet vektörü
+    embedding: Mapped[Optional[Any]] = mapped_column(
+        Vector(EMBEDDING_DIM),
+        nullable=True,
+        comment="Gemini text-embedding-004 ile üretilen 768-boyutlu anlamsal vektör"
+    )
 
     # İlişki
     session: Mapped["ResearchSession"] = relationship("ResearchSession", back_populates="web_sources")

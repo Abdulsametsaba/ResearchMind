@@ -46,6 +46,10 @@ class Settings(BaseSettings):
         default="gemini-3.1-flash-lite",
         description="Hızlı alt sorgu üretimi, özetleme ve fact-check için model"
     )
+    GEMINI_MODEL_EMBEDDING: str = Field(
+        default="models/text-embedding-004",
+        description="Metin gömme (embedding) için kullanılan model"
+    )
     GEMINI_TEMPERATURE: float = Field(
         default=0.2,
         description="Halüsinasyonu azaltmak için düşük sıcaklık değeri"

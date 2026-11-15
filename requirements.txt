@@ -1,0 +1,49 @@
+# ==============================================================================
+# ResearchMind - Python Bağımlılıkları (requirements.txt)
+# ==============================================================================
+# Bu dosya, ResearchMind projesinin tüm aşamaları (Faz 1-4) için gerekli
+# olan LLM, Ajan, Veritabanı, Web/Akademik Arama, PDF İşleme, REST API ve
+# Bilimsel Değerlendirme (Benchmark) kütüphanelerini tanımlar.
+#
+# Kurulum için:
+#   uv pip install -r requirements.txt
+#   veya
+#   pip install -r requirements.txt
+# ==============================================================================
+
+# --- 1. LLM ve Ajan Çatısı (Core Agents & Graph) ---
+langchain-core>=0.3.0
+langchain-google-genai>=2.0.0
+langgraph>=0.2.0
+langgraph-checkpoint>=2.0.0
+
+# --- 2. Veri Doğrulama ve Konfigürasyon (Settings & Validation) ---
+pydantic>=2.7.0
+pydantic-settings>=2.2.0
+python-dotenv>=1.0.1
+
+# --- 3. Veritabanı ve Vektör Depolama (PostgreSQL & pgvector) ---
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.29.0
+pgvector>=0.3.0
+
+# --- 4. Akademik ve Web Arama Araçları (Tools) ---
+tavily-python>=0.3.3
+arxiv>=2.1.0
+httpx>=0.27.0
+
+# --- 5. PDF & Akademik Döküman İşleme ---
+pymupdf>=1.24.0
+
+# --- 6. Konsol, Telemetri ve Rapor Görselleştirme ---
+rich>=13.7.0
+tabulate>=0.9.0
+psutil>=5.9.0
+
+# --- 7. Faz 4: Backend REST Servisi (FastAPI) ---
+fastapi>=0.111.0
+uvicorn>=0.30.0
+
+# --- 8. Faz 4: Bilimsel Değerlendirme ve Benchmark (Evaluation) ---
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

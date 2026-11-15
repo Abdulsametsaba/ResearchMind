@@ -3,22 +3,24 @@
 Dosya: researchmind/orchestrator/graph.py
 Görevi: LangGraph Çok Ajanlı İş Akışı ve Durum Yöneticisi (Supervisor Graph)
 ==============================================================================
-Bu dosya, ResearchMind projesinin tüm uzman ajanlarını (Planner, Paper Researcher,
-Web Researcher, Analysis Agent, Fact Checker, Report Agent) tek bir otonom
+Bu dosya, ResearchMind projesinin tüm uzman ajanlarını tek bir otonom
 ve döngüsel (iterative) grafikte birleştirir.
 
-Mimari Akış:
-1. START -> planner: Kullanıcı sorusunu analiz eder ve alt sorular üretir.
-2. planner -> paper_researcher: Akademik makaleleri ve PDF zekasını toplar.
-3. paper_researcher -> web_researcher: Web kaynaklarını toplar ve filtreler.
-4. web_researcher -> analysis: Karşılaştırmalı analiz yapar ve eksiklikleri değerlendirir.
-5. analysis -> [Koşullu Kenar: should_iterate]:
-   - Eksik bilgi var ve MAX_ITERATIONS aşılmadıysa: gap_reframer -> paper_researcher döngüsü.
-   - Araştırma yeterliyse: fact_checker'a ilerler.
-6. fact_checker -> report_generator: İddiaları doğrular ve nihai raporu derler.
-7. report_generator -> END.
+Mimari Akış (Faz-6 ile güncellenmiş):
+1. START → planner       : Kullanıcı sorusunu analiz eder, alt sorular üretir.
+2. planner → memory_retriever : pgvector'da geçmiş araştırmaları sorgular.
+3. memory_retriever → paper_researcher : Akademik makaleleri toplar.
+4. paper_researcher → web_researcher  : Web kaynaklarını toplar.
+5. web_researcher → analysis          : Karşılaştırmalı analiz yapar.
+6. analysis → [Koşullu: should_iterate]:
+   - Eksik bilgi + iterasyon < MAX → gap_reframer → paper_researcher döngüsü.
+   - Yeterli veya MAX aşıldı       → fact_checker'a ilerler.
+7. fact_checker → narrative_agent → report_generator → END.
 
-LangGraph MemorySaver / Postgres Checkpointer ile durum kalıcılığı sağlanır.
+Faz-6 — Memory Retriever:
+  planner'dan gelen alt sorular için pgvector üzerinde semantic search yapılır.
+  Bulunan kaynaklar state'e eklenir; Paper Researcher mükerrerları atlar.
+  Böylece aynı konuda önceki araştırmalardaki makaleler yeniden indirilmez.
 ==============================================================================
 """
 
@@ -30,6 +32,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from config.settings import get_settings
 from core.state import ResearchState, SubQuestion
 from agents.planner import plan_research
+from agents.memory_retriever import retrieve_from_memory
 from agents.paper_researcher import conduct_paper_research
 from agents.web_researcher import conduct_web_research
 from agents.analysis_agent import conduct_analysis
@@ -99,6 +102,7 @@ def build_researchmind_graph():
 
     # Düğümleri Ekle (Nodes)
     workflow.add_node("planner", plan_research)
+    workflow.add_node("memory_retriever", retrieve_from_memory)   # Faz-6: Semantic Memory
     workflow.add_node("paper_researcher", conduct_paper_research)
     workflow.add_node("web_researcher", conduct_web_research)
     workflow.add_node("analysis", conduct_analysis)
@@ -109,7 +113,8 @@ def build_researchmind_graph():
 
     # Kenarları Tanımla (Edges)
     workflow.add_edge(START, "planner")
-    workflow.add_edge("planner", "paper_researcher")
+    workflow.add_edge("planner", "memory_retriever")          # Faz-6: planner → memory
+    workflow.add_edge("memory_retriever", "paper_researcher") # Faz-6: memory → paper
     workflow.add_edge("paper_researcher", "web_researcher")
     workflow.add_edge("web_researcher", "analysis")
 

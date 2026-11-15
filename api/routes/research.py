@@ -1,10 +1,10 @@
 """
 ==============================================================================
 Dosya: researchmind/api/routes/research.py
-Görevi: Araştırma İşlemleri REST API Endpoint'leri (Faz-5+6: PostgreSQL + İptal + Semantic Memory)
+Görevi: Araştırma İşlemleri REST API Endpoint'leri (Faz-5+6+7)
 ==============================================================================
 Endpoint'ler:
-  POST /api/research                      → Yeni araştırma başlat
+  POST /api/research                      → Yeni araştırma başlat (Faz-7: Scope Gate ile korumalı)
   GET  /api/research                      → Tüm araştırmaları listele (DB)
   GET  /api/research/memory/search        → Semantik hafıza araması (Faz-6)
   GET  /api/research/{id}                 → Durum sorgula
@@ -16,6 +16,7 @@ Mimari Notlar:
   - asyncio.create_task() → iptal edilebilir arka plan görevi
   - run_in_executor()     → LangGraph thread pool'da, event loop bloklanmaz
   - Faz-6: araştırma bitince Gemini embedding'leri üretilip pgvector'a kaydedilir
+  - Faz-7: POST /api/research → Scope Gate değerlendirmesi → IN_SCOPE ise pipeline
 ==============================================================================
 """
 
@@ -41,6 +42,7 @@ from api.schemas import (
     ReportSectionSummary,
     ClaimVerificationSummary,
     EvaluationMetrics,
+    ScopeGateResponse,
 )
 from core.state import ResearchState
 from database.connection import get_db_session
@@ -49,7 +51,11 @@ from database.models import ResearchSession
 from orchestrator.graph import get_research_graph
 from evaluation.metrics import calculate_research_metrics
 
-from tools.embeddings import generate_embedding, build_query_text, build_paper_text, build_web_source_text
+from tools.embeddings import (
+        generate_embedding, build_paper_text, build_web_source_text, build_query_text)
+
+from agents.scope_gate import evaluate_research_scope, ScopeDecision
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("ResearchMind.API.Research")
 
@@ -82,7 +88,7 @@ async def _generate_and_save_embeddings(
     Hata toleranslı: Embedding hatası araştırmanın durumunu etkilemez.
     Thread pool'da (run_in_executor) çalıştırılır — Gemini API senkron çağrıdır.
     """
-
+   
     papers      = final_state.get("academic_sources", [])
     web_sources = final_state.get("web_sources", [])
 
@@ -261,25 +267,73 @@ async def _run_research_background(
 
 @router.post(
     "",
-    response_model=ResearchJobResponse,
-    status_code=202,
     summary="Yeni Araştırma Başlat",
     description=(
         "Verilen araştırma sorusu için çok ajanlı derin araştırma sürecini başlatır. "
         "İşlem arka planda yürütülür; dönen `session_id` ile durum takibi yapılabilir. "
-        "Tamamlanan araştırmalar kalıcı olarak PostgreSQL'e kaydedilir."
+        "Tamamlanan araştırmalar kalıcı olarak PostgreSQL'e kaydedilir.\n\n"
+        "**Faz-7 — Research Scope Gate:** İstek önce kapsam değerlendirmesinden geçer. "
+        "Araştırma görevi olmayan veya hedefi belirsiz istekler pipeline'a alınmaz; "
+        "DB'ye yazılmaz. Olası HTTP yanıtları:\n"
+        "- **202**: `IN_SCOPE` → araştırma başlatıldı (`ResearchJobResponse`).\n"
+        "- **200**: `OUT_OF_SCOPE` veya `NEEDS_CLARIFICATION` → pipeline başlamadı (`ScopeGateResponse`)."
     ),
 )
 async def start_research(
     request: ResearchRequest,
     db: AsyncSession = Depends(get_db_session),
-) -> ResearchJobResponse:
+):
     """
     Yeni araştırma oturumu oluşturur, DB'ye kaydeder ve arka planda başlatır.
+
+    Faz-7 — Scope Gate entegrasyonu:
+      1. Gate senkron olarak değerlendirir (thread pool'da — LLM çağrısı bloklar).
+      2. OUT_OF_SCOPE / NEEDS_CLARIFICATION → 200 + ScopeGateResponse (DB yazılmaz).
+      3. IN_SCOPE → mevcut pipeline devam eder (202 + ResearchJobResponse).
 
     asyncio.create_task() kullanılır (BackgroundTasks yerine) böylece dönen
     Task nesnesi _running_tasks üzerinden iptal edilebilir.
     """
+    
+
+    # ── Faz-7: Scope Gate ─────────────────────────────────────────────────────
+    # LLM senkron çağrıdır — event loop'u bloklamaz diye thread pool'da çalıştır.
+    loop = asyncio.get_event_loop()
+    gate_result = await loop.run_in_executor(
+        _executor,
+        lambda: evaluate_research_scope(request.query, request.guidance),
+    )
+
+    if gate_result.decision != ScopeDecision.IN_SCOPE:
+        # Pipeline başlamaz, DB'ye hiçbir şey yazılmaz.
+        status_label = (
+            "out_of_scope"
+            if gate_result.decision == ScopeDecision.OUT_OF_SCOPE
+            else "needs_clarification"
+        )
+        hint = None
+        if gate_result.decision == ScopeDecision.OUT_OF_SCOPE:
+            hint = (
+                "İpucu: Konuyu değiştirmek zorunda değilsiniz — isteğinizi "
+                "analitik bir araştırma sorusuna dönüştürmeyi deneyin. "
+                "Örnek: 'X kimdir?' yerine 'X'in kariyer performansını "
+                "istatistiksel kaynaklarla analiz et.' şeklinde sorun."
+            )
+        logger.info(
+            f"[ScopeGate] İstek reddedildi ({gate_result.decision.value}): "
+            f"'{request.query[:60]}...'"
+        )
+        response_body = ScopeGateResponse(
+            status=status_label,
+            message=gate_result.user_message,
+            hint=hint,
+        )
+        return JSONResponse(
+            status_code=200,
+            content=response_body.model_dump(),
+        )
+
+    # ── IN_SCOPE: Mevcut pipeline devam eder ─────────────────────────────────
     session_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
 
@@ -296,7 +350,8 @@ async def start_research(
 
     logger.info(f"[{session_id[:8]}] Araştırma kuyruğa alındı: '{request.query[:60]}...'")
 
-    return ResearchJobResponse(
+    from fastapi.responses import JSONResponse as _JSONResponse
+    response_body = ResearchJobResponse(
         session_id=session_id,
         status="running",
         message=(
@@ -304,6 +359,10 @@ async def start_research(
             f"durum için GET /api/research/{session_id} adresini kullanın."
         ),
         created_at=created_at,
+    )
+    return _JSONResponse(
+        status_code=202,
+        content=response_body.model_dump(mode="json"),
     )
 
 

@@ -178,3 +178,37 @@ class SemanticSearchResponse(BaseModel):
     web_sources: List[SemanticWebResult] = Field(default_factory=list)
     total_found: int = Field(description="Toplam bulunan kaynak sayısı")
 
+
+
+class ScopeGateResponse(BaseModel):
+    """
+    POST /api/research — Kapsam değerlendirmesi reddi veya netleştirme yanıtı.
+
+    Bu şema yalnızca araştırma BAŞLATILMADIGI durumlarda (OUT_OF_SCOPE veya
+    NEEDS_CLARIFICATION) döner. IN_SCOPE durumunda standart ResearchJobResponse
+    döner — bu şema asla kullanılmaz.
+
+    HTTP 200 ile döner (hata değil, beklenen bir sistem davranışı).
+    """
+    status: str = Field(
+        description=(
+            "'out_of_scope': İstek araştırma görevi değil. "
+            "'needs_clarification': Araştırma hedefi netleştirme gerektiriyor."
+        ),
+        examples=["out_of_scope", "needs_clarification"]
+    )
+    message: str = Field(
+        description="Kullanıcıya gösterilecek nazik Türkçe açıklama veya netleştirici soru."
+    )
+    session_id: None = Field(
+        default=None,
+        description="Araştırma başlatılmadığından her zaman null döner."
+    )
+    hint: Optional[str] = Field(
+        default=None,
+        description=(
+            "Kullanıcının isteğini nasıl yeniden çerçeveleyebileceğine dair opsiyonel ipucu. "
+            "Yalnızca OUT_OF_SCOPE durumunda eklenir."
+        )
+    )
+

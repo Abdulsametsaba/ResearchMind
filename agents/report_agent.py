@@ -18,6 +18,7 @@ Rapor Bileşenleri:
 """
 
 import logging
+import re
 from typing import Dict, List
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -34,6 +35,46 @@ from core.state import (
 logger = logging.getLogger("ResearchMind.Agents.ReportAgent")
 
 
+def clean_executive_summary(text: str) -> str:
+    """
+    Yönetici özetindeki araya giren kaynak/atıf numaralarını ve köşeli parantez referanslarını temizler.
+    
+    Örnekler:
+      - 'Modeller [1] ve yöntemler [2, 3] geliştirilmiştir.' -> 'Modeller ve yöntemler geliştirilmiştir.'
+      - 'Büyük ölçekli veri setleri [Kaynak 1-3] kullanılarak...' -> 'Büyük ölçekli veri setleri kullanılarak...'
+      - 'Başarı oranı 2024 yılında %92 olarak ölçülmüştür.' -> (Tarih ve yüzdelere dokunulmaz!)
+    """
+    if not text:
+        return ""
+
+    # 1. Köşeli parantez içindeki kaynak/sayı referansları: [1], [1, 2], [1-3], [Kaynak 1], [Source 1]
+    cleaned = re.sub(
+        r'\[\s*(?:kaynak|source|ref|referans)?\s*\d+(?:\s*[,-–]\s*\d+)*\s*\]',
+        '',
+        text,
+        flags=re.IGNORECASE
+    )
+
+    # 2. Art arda gelen veya tekil köşeli parantezli sayılar: [1][2]
+    cleaned = re.sub(r'\[\s*\d+\s*\]', '', cleaned)
+
+    # 3. Parantez içindeki açık kaynak referansları: (Kaynak 1), (Source 1), (Ref 2)
+    cleaned = re.sub(
+        r'\(\s*(?:kaynak|source|ref|referans)\s*\d+\s*\)',
+        '',
+        cleaned,
+        flags=re.IGNORECASE
+    )
+
+    # 4. Noktalama işaretlerinden önce oluşan gereksiz boşlukları düzelt: 'geliştirilmiştir . Bu' -> 'geliştirilmiştir. Bu'
+    cleaned = re.sub(r'\s+([.,;:!?])', r'\1', cleaned)
+
+    # 5. Silinen atıflar sonrası oluşan çift/çoklu boşlukları teke indir
+    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+
+    return cleaned.strip()
+
+
 class ReportSectionOutput(BaseModel):
     """Raporun her bir alt bölümü."""
     heading: str = Field(description="Bölüm başlığı (örn. '2. Temel Mimari Yaklaşımlar')")
@@ -46,9 +87,11 @@ class ReportSynthesisOutput(BaseModel):
     Tablolar ve kaynakça Python tarafında deterministik birleştirilir.
     """
     title: str = Field(description="Akademik araştırma raporu başlığı")
-    executive_summary: str = Field(description="Yönetici özeti ve ana çıkarımlar")
+    executive_summary: str = Field(
+        description="Yönetici özeti ve ana çıkarımlar. KESİNLİKLE [1], [2] gibi kaynak numaraları veya atıf etiketleri içermemeli, akıcı ve duru olmalıdır."
+    )
     sections: List[ReportSectionOutput] = Field(
-        description="Raporun derinlemesine teknik bölümleri"
+        description="Raporun derinlemesine teknik bölümleri (atıflar [1], [2] burada kullanılmalıdır)"
     )
     limitations_and_future_directions: str = Field(
         description="Tespit edilen kısıtlar, açık problemler ve gelecek trendleri"
@@ -61,14 +104,18 @@ kullanarak yayınlanmaya hazır, yüksek kaliteli ve kapsamlı bir araştırma r
 
 Raporlama İlkeleri:
 1. Akademik ve Nesnel Ton: Profesyonel, açık, teknik ve kanıta dayalı bir dil kullan.
-2. Numaralandırılmış Atıf Sistemi: İddia ve bulgularda kaynaklara [1], [2] şeklinde referans ver.
-3. Bölüm Yapısı:
-   - Yönetici Özeti: Ana bulguları özetleyen güçlü bir giriş.
+2. Numaralandırılmış Atıf Sistemi: İddia ve bulgularda kaynaklara [1], [2] şeklinde referans ver (YALNIZCA alt teknik bölümlerde geçerlidir).
+3. Yönetici Özeti (Executive Summary) Özel Kuralı:
+   - Yönetici Özeti, araştırmanın ana bulgularını, metodolojisini ve çıkarımlarını duru, akıcı ve profesyonel bir dille sunan üst düzey bir özetidir.
+   - KESİNLİKLE YÖNETİCİ ÖZETİ İÇERİSİNE [1], [2] GİBİ KAYNAK VEYA ATIF NUMARALARI KOYMA!
+   - Yönetici özeti kesintisiz ve temiz bir metin olmalıdır. Numaralandırılmış atıflar sadece teknik alt bölümlerde (sections) yer almalıdır.
+4. Bölüm Yapısı:
+   - Yönetici Özeti: Ana bulguları özetleyen, atıf numarası içermeyen duru bir giriş.
    - Temel Mimari Yaklaşımlar: Görsel kodlayıcı, projektör ve LLM omurgası mimarileri.
    - Eğitim Stratejileri ve Veri: Pre-training, instruction tuning ve alignment yaklaşımları.
    - Karşılaştırmalı Performans ve Benchmarklar: Sayısal sonuçlar ve değerlendirme metrikleri.
    - Kısıtlar ve Açık Problemler: Karşılaşılan engeller ve gelecekteki araştırma yönleri.
-4. Kaynakça: İncelenen makaleleri ve web sayfalarını numaralandırılmış biçimde listele.
+5. Kaynakça: İncelenen makaleleri ve web sayfalarını numaralandırılmış biçimde listele.
 """
 
 
@@ -194,9 +241,11 @@ def generate_research_report(state: ResearchState) -> dict:
             "content": s.content
         } for s in synthesis.sections]
 
+        cleaned_summary = clean_executive_summary(synthesis.executive_summary)
+
         report = ResearchReport(
             title=synthesis.title,
-            executive_summary=synthesis.executive_summary,
+            executive_summary=cleaned_summary,
             sections=sections_dict_list,
             comparative_analysis_markdown=comp_table_md,
             verification_matrix_markdown=verification_matrix_md,

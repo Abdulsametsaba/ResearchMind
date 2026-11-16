@@ -45,6 +45,7 @@ from api.schemas import (
     ScopeGateResponse,
 )
 from core.state import ResearchState
+from agents.report_agent import clean_executive_summary
 from database.connection import get_db_session
 from database import service as db_service
 from database.models import ResearchSession
@@ -52,7 +53,8 @@ from orchestrator.graph import get_research_graph
 from evaluation.metrics import calculate_research_metrics
 
 from tools.embeddings import (
-        generate_embedding, build_paper_text, build_web_source_text, build_query_text)
+        generate_embedding, build_paper_text, build_web_source_text, build_query_text
+    )
 
 from agents.scope_gate import evaluate_research_scope, ScopeDecision
 from fastapi.responses import JSONResponse
@@ -88,7 +90,7 @@ async def _generate_and_save_embeddings(
     Hata toleranslı: Embedding hatası araştırmanın durumunu etkilemez.
     Thread pool'da (run_in_executor) çalıştırılır — Gemini API senkron çağrıdır.
     """
-   
+
     papers      = final_state.get("academic_sources", [])
     web_sources = final_state.get("web_sources", [])
 
@@ -294,7 +296,7 @@ async def start_research(
     asyncio.create_task() kullanılır (BackgroundTasks yerine) böylece dönen
     Task nesnesi _running_tasks üzerinden iptal edilebilir.
     """
-    
+   
 
     # ── Faz-7: Scope Gate ─────────────────────────────────────────────────────
     # LLM senkron çağrıdır — event loop'u bloklamaz diye thread pool'da çalıştır.
@@ -635,10 +637,12 @@ async def get_research_report(
     papers        = final_state.get("academic_sources", [])
     web_sources   = final_state.get("web_sources", [])
 
+    cleaned_exec_summary = clean_executive_summary(db_report.executive_summary)
+
     sections = [
         ReportSectionSummary(
             heading="Araştırma Raporu",
-            content_preview=db_report.executive_summary[:300] + "..."
+            content_preview=cleaned_exec_summary[:300] + "..."
         )
     ]
 
@@ -656,7 +660,7 @@ async def get_research_report(
     return ReportResponse(
         session_id=session_id,
         title=db_report.title,
-        executive_summary=db_report.executive_summary,
+        executive_summary=cleaned_exec_summary,
         sections=sections,
         comparative_analysis_markdown=None,
         verification_matrix_markdown=None,

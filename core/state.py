@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/core/state.py
 Görevi: LangGraph Merkezi Durum (State) ve Pydantic Veri Modelleri
 ==============================================================================
 Bu dosya, ResearchMind'ın çok ajanlı iş akışında dolaşan ortak hafıza (State)
@@ -52,27 +51,27 @@ class ExtractedPaperIntel(BaseModel):
     """
     model_architecture: Optional[str] = Field(
         default=None,
-        description="Kullanılan temel model mimarisi (örn. ViT-L/14 + Llama-3-8B)"
+        description="Kullanılan temel model mimarisi, algoritma veya şema (örn. ML-KEM-768 lattice-based KEM, Transformer, ResNet)"
     )
     training_methodology: Optional[str] = Field(
         default=None,
-        description="Eğitim yöntemi, aşamaları ve hizalama teknikleri (SFT, RLHF, DPO vb.)"
+        description="Metodolojik tasarım, prototip hazırlık veya eğitim/hizalama tekniği"
     )
     datasets_used: List[str] = Field(
         default_factory=list,
-        description="Eğitim veya değerlendirmede kullanılan veri kümeleri"
+        description="Deney, değerlendirme veya parametre setinde kullanılan veri kümeleri / standartlar"
     )
     evaluation_benchmarks: Dict[str, str] = Field(
         default_factory=dict,
-        description="Benchmark adı ve elde edilen skor çiftleri (örn. {'MME': '1850', 'MMBench': '76.4'})"
+        description="Benchmark veya metrik adı ve skor/parametre çiftleri (örn. {'NIST_Security_Category': '3 (AES-192)', 'PublicKey_Bytes': '1184', 'MME': '1850'})"
     )
     key_findings: List[str] = Field(
         default_factory=list,
-        description="Makalenin ortaya koyduğu ana yenilikler ve bulgular"
+        description="Makalenin ortaya koyduğu ana yenilikler, spesifikasyonlar ve bulgular"
     )
     limitations: List[str] = Field(
         default_factory=list,
-        description="Yazarların belirttiği veya tespit edilen eksiklikler ve limitler"
+        description="Yazarların belirttiği veya tespit edilen eksiklikler, kısıtlar ve saldırı modelleri"
     )
 
 
@@ -127,8 +126,14 @@ class ClaimVerification(BaseModel):
     evidence_quote: str = Field(
         description="Kaynaktan doğrudan alınan kanıt cümlesi veya alıntı"
     )
-    verification_status: Literal["VERIFIED", "CONTRADICTED", "NEEDS_VERIFICATION"] = Field(
-        description="Doğrulama kararı"
+    verification_status: Literal[
+        "VERIFIED",
+        "PARTIALLY_VERIFIED",
+        "INSUFFICIENT_EVIDENCE",
+        "CONTRADICTED",
+        "NEEDS_VERIFICATION"
+    ] = Field(
+        description="Doğrulama kararı: Doğrudan teyit (VERIFIED), belirli koşul/saldırı modelinde geçerli (PARTIALLY_VERIFIED), kanıt yetersiz (INSUFFICIENT_EVIDENCE), çelişkili (CONTRADICTED) veya teyit bekliyor (NEEDS_VERIFICATION)"
     )
     confidence_score: float = Field(
         default=1.0,
@@ -136,7 +141,7 @@ class ClaimVerification(BaseModel):
     )
     notes: Optional[str] = Field(
         default=None,
-        description="Çelişki veya eksiklik durumunda düşülen açıklama notu"
+        description="Çelişki, koşullu geçerlilik (örn. spesifik saldırı modeli/varsayımı) veya eksiklik açıklaması"
     )
 
 

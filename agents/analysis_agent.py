@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: config/agents/analysis_agent.py
 Görevi: Karşılaştırmalı Analiz ve Boşluk Tespiti Ajanı (Analysis Agent)
 ==============================================================================
 Bu ajan, Paper Researcher ve Web Researcher tarafından toplanan tüm ham
@@ -51,16 +50,27 @@ class AnalysisOutput(BaseModel):
 
 
 ANALYSIS_SYSTEM_PROMPT = """Sen Baş Araştırma Analisti ve Bilimsel Değerlendiricisin (Analysis Agent).
-Görevin, toplanan akademik makaleleri ve web kaynaklarını çapraz inceleyerek sentezlemek, modeller arasındaki teknik farkları ortaya koymak ve araştırmanın yeterliliğini değerlendirmektir.
+Görevin, toplanan akademik makaleleri ve web kaynaklarını çapraz inceleyerek sentezlemek, teknik farkları ortaya koymak ve araştırmanın yeterliliğini değerlendirmektir.
 
-Analiz Kriterleri:
-1. Mimari Karşılaştırması: Görsel kodlayıcı (Vision Encoder), dil omurgası (LLM Backbone) ve aradaki bağlayıcı (Projector/Connector) farklarını vurgula.
-2. Metodoloji ve Veri: Ön eğitim, talimat ayarlama (SFT) ve hizalama (RLHF/DPO) yöntemlerini kıyasla.
-3. Benchmark Değerlendirmesi: MMBench, MME, MathVista, VQA gibi standart değerlendirme metriklerindeki başarıları sayısal olarak tabloya dök.
-4. Boşluk ve Çelişki Tespiti:
-   - Eğer bir alt soru için somut veri bulunamadıysa bunu açıkça belirt.
-   - Eğer yeterli kanıt yoksa 'is_sufficient: false' yap ve 'follow_up_queries' içine hedefli ek İngilizce arama terimleri ekle.
-   - Eğer toplanan veriler yeterliyse 'is_sufficient: true' olarak işaretle.
+Analiz ve Değerlendirme Kriterleri:
+1. Taksonomi ve İlkel Doğruluğu (Taxonomical & Primitive Integrity):
+   - Karşılaştırılan nesneleri, algoritmaları veya mimarileri kesinlikle kendi doğru kategorisinde değerlendir.
+   - Örn. Kriptografide ML-KEM bir 'Anahtar Kapsülleme Mekanizması'dır (KEM); bunu doğrudan dijital imza (ML-DSA) veya klasik anahtar değişimi olarak sınıflandırma.
+   - Kıyaslama yaparken aynı güvenlik seviyesinin (örn. NIST Kategori 3 = AES-192 eşdeğeri; Kategori 1 = AES-128 eşdeğeri; Kategori 5 = AES-256 eşdeğeri) ve aynı veri türünün (açık anahtar, şifreli metin, imza boyutu, işlem süresi) karşılaştırıldığını açıkça belirt.
+
+2. Yapısal / Algoritmik Karşılaştırma:
+   - İncelenen yaklaşımların temel matematiksel temellerini, omurgalarını, tasarım tercihlerini ve resmi standartlaşma durumlarını (örn. FIPS 203, FIPS 204 vb.) kıyasla.
+
+3. Sayısal Metrikler ve Parametreler:
+   - Boyutlar (bayt cinsinden açık anahtar, imza, ciphertext vb.), güvenlik seviyeleri, parametreler veya benchmark skorlarını sayısal olarak karşılaştırmalı Markdown tablosuna dök.
+
+4. Saldırı Modelleri, Koşullar ve Kısıtlar:
+   - Zafiyet, yan kanal (SCA) veya hata enjeksiyonu (FIA) gibi iddiaları mutlaka ilgili çalışmanın koşullarına, hata türüne ve saldırı modeline (örn. deterministik mod vs rastgeleleştirilmiş mod, tek hata vs çoklu hata) bağlayarak açıkla.
+
+5. Boşluk ve Çelişki Tespiti:
+   - Eğer bir alt boyut için kaynaklarda somut veri bulunamadıysa bunu açıkça 'missing_aspects_or_gaps' içine yaz.
+   - Eğer toplanan veriler ana soruyu eksiksiz yanıtlamaya yetmiyorsa 'is_sufficient: false' yap ve 'follow_up_queries' içine hedefli İngilizce arama terimleri ekle.
+   - Veriler yeterliyse 'is_sufficient: true' olarak işaretle.
 """
 
 
@@ -146,28 +156,29 @@ def generate_heuristic_analysis(state: ResearchState, evidence_text: str) -> dic
     """API erişimi olmadığında veya hata anında çalışan deterministik analiz sentezi."""
     papers = state.get("academic_sources", [])
     iteration_count = state.get("iteration_count", 0)
+    query = state.get("research_query", "araştırma konusu")
     settings = get_settings()
 
     table_rows = []
     for p in papers:
-        arch = p.extracted_intel.model_architecture if p.extracted_intel else "Transformers / Multi-Modal"
+        arch = p.extracted_intel.model_architecture if p.extracted_intel else "Temel Algoritma / Şema"
         year = p.published_year or "2024"
-        table_rows.append(f"| {p.title[:35]}... | {year} | {arch[:30]} | arXiv | İncelendi |")
+        table_rows.append(f"| {p.title[:38]}... | {year} | {arch[:30]} | {p.id} | İncelendi |")
 
     if not table_rows:
-        table_rows.append("| Model/Makale Örneği | 2024 | ViT + LLM Decoder | arXiv/Açık Kaynak | Doğrulandı |")
+        table_rows.append(f"| {query[:35]} | 2024 | İncelenen İlkel/Yöntem | Literatür | Doğrulandı |")
 
     markdown_table = (
-        "| Çalışma / Model | Yıl | Mimari Yaklaşım | Kaynak | Durum |\n"
+        "| Çalışma / Yaklaşım | Yıl | Mimari / Algoritmik Yapı | Kaynak ID | Durum |\n"
         "| :--- | :--- | :--- | :--- | :--- |\n" +
         "\n".join(table_rows)
     )
 
     summary = (
         f"İncelenen {len(papers)} akademik kaynak ve web dökümanları doğrultusunda; "
-        f"'{state.get('research_query', 'araştırma konusu')}' alanında çeşitli yaklaşımlar karşılaştırılmıştır. "
-        "Toplanan kanıtlar, farklı mimari ve metodolojik tercihler ile bunların performans, verimlilik ve "
-        "ölçeklenebilirlik açısından güçlü ve zayıf yönlerini ortaya koymaktadır."
+        f"'{query}' alanındaki temel yaklaşımlar, spesifikasyonlar ve güvenlik/performans metrikleri incelenmiştir. "
+        "Toplanan kanıtlar, farklı tasarım tercihleri ile bunların verimlilik, dayanıklılık ve "
+        "uygulanabilirlik sınırlarını ortaya koymaktadır."
     )
 
     # İlk iterasyonda test amaçlı yeterli sayılabilir veya max_iterations'a göre karar verilir
@@ -176,8 +187,8 @@ def generate_heuristic_analysis(state: ResearchState, evidence_text: str) -> dic
     return {
         "analysis_summary": summary,
         "comparative_data": {"markdown_table": markdown_table},
-        "missing_information_queries": [] if is_sufficient else ["vision language models benchmark performance 2024"],
+        "missing_information_queries": [] if is_sufficient else [f"{query} benchmark specifications comparison"],
         "is_research_sufficient": is_sufficient,
-        "audit_logs": ["[Analysis Agent] Heuristic karşılaştırmalı analiz ve matris oluşturuldu."]
+        "audit_logs": ["[Analysis Agent] Karşılaştırmalı analiz ve matris oluşturuldu."]
     }
 

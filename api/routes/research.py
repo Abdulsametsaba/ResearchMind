@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/api/routes/research.py
 Görevi: Araştırma İşlemleri REST API Endpoint'leri (Faz-5+6+7)
 ==============================================================================
 Endpoint'ler:
@@ -43,6 +42,8 @@ from api.schemas import (
     ClaimVerificationSummary,
     EvaluationMetrics,
     ScopeGateResponse,
+    AcademicPaperDetail,
+    WebSourceDetail,
 )
 from core.state import ResearchState
 from agents.report_agent import clean_executive_summary
@@ -53,7 +54,7 @@ from orchestrator.graph import get_research_graph
 from evaluation.metrics import calculate_research_metrics
 
 from tools.embeddings import (
-        generate_embedding, build_paper_text, build_web_source_text, build_query_text
+        generate_embedding, build_paper_text, build_web_source_text,build_query_text
     )
 
 from agents.scope_gate import evaluate_research_scope, ScopeDecision
@@ -90,7 +91,7 @@ async def _generate_and_save_embeddings(
     Hata toleranslı: Embedding hatası araştırmanın durumunu etkilemez.
     Thread pool'da (run_in_executor) çalıştırılır — Gemini API senkron çağrıdır.
     """
-
+    
     papers      = final_state.get("academic_sources", [])
     web_sources = final_state.get("web_sources", [])
 
@@ -296,7 +297,6 @@ async def start_research(
     asyncio.create_task() kullanılır (BackgroundTasks yerine) böylece dönen
     Task nesnesi _running_tasks üzerinden iptal edilebilir.
     """
-   
 
     # ── Faz-7: Scope Gate ─────────────────────────────────────────────────────
     # LLM senkron çağrıdır — event loop'u bloklamaz diye thread pool'da çalıştır.
@@ -496,7 +496,7 @@ async def search_semantic_memory(
     Bu endpoint kullanıcının araştırma başlatmadan önce mevcut hafızada
     ne olduğunu keşfetmesini sağlar.
     """
-
+   
     loop = asyncio.get_event_loop()
     embedding = await loop.run_in_executor(
         _executor, generate_embedding, build_query_text(q)
@@ -631,43 +631,133 @@ async def get_research_report(
     if not db_report:
         raise HTTPException(status_code=404, detail="Rapor henüz DB'ye kaydedilmedi.")
 
-    cached      = _active_states.get(session_id, {})
+    # DB'den kaynakları ve doğrulamaları yükle
+    db_papers = await db_service.get_papers_by_session(db, session_id)
+    db_web = await db_service.get_web_sources_by_session(db, session_id)
+    db_claims = await db_service.get_verifications_by_session(db, session_id)
+
+    cached = _active_states.get(session_id, {})
     final_state = cached.get("final_state", {})
-    verifications = final_state.get("claim_verifications", [])
-    papers        = final_state.get("academic_sources", [])
-    web_sources   = final_state.get("web_sources", [])
+    final_report = final_state.get("final_report")
 
     cleaned_exec_summary = clean_executive_summary(db_report.executive_summary)
 
-    sections = [
-        ReportSectionSummary(
-            heading="Araştırma Raporu",
-            content_preview=cleaned_exec_summary[:300] + "..."
+    sections: List[ReportSectionSummary] = []
+    comp_md = None
+    verif_md = None
+    limitations = "Akademik literatür analizi tamamlanmıştır."
+
+    if final_report:
+        for sec in getattr(final_report, "sections", []):
+            h = sec.get("heading") if isinstance(sec, dict) else getattr(sec, "heading", "")
+            c = sec.get("content") if isinstance(sec, dict) else getattr(sec, "content", "")
+            sections.append(
+                ReportSectionSummary(
+                    heading=h,
+                    content=c,
+                    content_preview=c[:300] + "..." if c else "",
+                )
+            )
+        comp_md = getattr(final_report, "comparative_analysis_markdown", None)
+        verif_md = getattr(final_report, "verification_matrix_markdown", None)
+        limitations = getattr(final_report, "limitations_and_future_directions", limitations)
+    elif db_report.report_markdown:
+        # DB'deki tam markdown metninden bölümleri ve tabloları çözümle
+        parts = db_report.report_markdown.split("\n## ")
+        for part in parts[1:]:
+            lines = part.split("\n", 1)
+            heading = lines[0].strip()
+            content = lines[1].strip() if len(lines) > 1 else ""
+            h_lower = heading.lower()
+            if "yönetici özeti" in h_lower:
+                continue
+            elif "karşılaştırmalı analiz" in h_lower:
+                comp_md = content
+            elif "doğrulama matrisi" in h_lower:
+                verif_md = content
+            elif "kısıtlar ve gelecek" in h_lower:
+                limitations = content
+            elif "kaynakça" in h_lower:
+                continue
+            else:
+                sections.append(
+                    ReportSectionSummary(
+                        heading=heading,
+                        content=content,
+                        content_preview=content[:300] + "..." if content else "",
+                    )
+                )
+
+    # İddia doğrulamaları
+    claim_summaries = []
+    if db_claims:
+        for v in db_claims:
+            claim_summaries.append(
+                ClaimVerificationSummary(
+                    claim_id=v.id[:8] if v.id else "C-1",
+                    claim_text=v.claim_text,
+                    verification_status=v.verification_status,
+                    confidence_score=v.confidence_score,
+                    source_reference=v.source_reference,
+                    notes=getattr(v, "notes", None),
+                )
+            )
+    else:
+        for v in final_state.get("claim_verifications", []):
+            claim_summaries.append(
+                ClaimVerificationSummary(
+                    claim_id=v.claim_id,
+                    claim_text=v.claim_text,
+                    verification_status=v.verification_status,
+                    confidence_score=v.confidence_score,
+                    source_reference=v.source_reference,
+                    notes=getattr(v, "notes", None),
+                )
+            )
+
+    # Akademik makale detayları
+    paper_details = [
+        AcademicPaperDetail(
+            paper_id=p.paper_id,
+            title=p.title,
+            authors=p.authors or [],
+            published_year=p.published_year,
+            url=p.url,
+            pdf_url=p.pdf_url,
+            abstract=p.abstract,
+            extracted_intel=p.extracted_intel,
+            relevance_score=p.relevance_score,
         )
+        for p in db_papers
     ]
 
-    claim_summaries = [
-        ClaimVerificationSummary(
-            claim_id=v.claim_id,
-            claim_text=v.claim_text[:200],
-            verification_status=v.verification_status,
-            confidence_score=v.confidence_score,
-            source_reference=v.source_reference[:100],
+    # Web kaynağı detayları
+    web_details = [
+        WebSourceDetail(
+            url=w.url,
+            title=w.title,
+            snippet=w.snippet,
+            relevance_score=w.relevance_score,
         )
-        for v in verifications
+        for w in db_web
     ]
+
+    bib_list = db_report.report_metadata.get("bibliography", []) if db_report.report_metadata else []
 
     return ReportResponse(
         session_id=session_id,
         title=db_report.title,
         executive_summary=cleaned_exec_summary,
         sections=sections,
-        comparative_analysis_markdown=None,
-        verification_matrix_markdown=None,
-        limitations_and_future_directions="Rapor DB'den yüklendi.",
-        bibliography=db_report.report_metadata.get("bibliography", []),
+        report_markdown=db_report.report_markdown,
+        comparative_analysis_markdown=comp_md,
+        verification_matrix_markdown=verif_md,
+        limitations_and_future_directions=limitations,
+        bibliography=bib_list,
         claim_verifications=claim_summaries,
-        total_sources=len(papers) + len(web_sources),
+        academic_papers=paper_details,
+        web_sources=web_details,
+        total_sources=len(paper_details) + len(web_details),
         created_at=db_report.created_at,
     )
 

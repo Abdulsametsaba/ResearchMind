@@ -32,6 +32,8 @@ from core.state import (
     SubQuestion,
 )
 
+from config.settings import get_settings
+
 logger = logging.getLogger("ResearchMind.Evaluation.Metrics")
 
 # Metrik ağırlıkları (toplam = 1.0)
@@ -78,7 +80,9 @@ def calculate_citation_accuracy(verifications: List[ClaimVerification]) -> float
 
     Yöntem:
       - VERIFIED: 1.0 puan × confidence_score
+      - PARTIALLY_VERIFIED: 0.8 puan × confidence_score (belirli koşulda teyit)
       - NEEDS_VERIFICATION: 0.5 puan × confidence_score
+      - INSUFFICIENT_EVIDENCE: 0.4 puan × confidence_score
       - CONTRADICTED: 0.0 puan
     """
     if not verifications:
@@ -88,8 +92,12 @@ def calculate_citation_accuracy(verifications: List[ClaimVerification]) -> float
     for v in verifications:
         if v.verification_status == "VERIFIED":
             total_weighted += 1.0 * v.confidence_score
+        elif v.verification_status == "PARTIALLY_VERIFIED":
+            total_weighted += 0.8 * v.confidence_score
         elif v.verification_status == "NEEDS_VERIFICATION":
             total_weighted += 0.5 * v.confidence_score
+        elif v.verification_status == "INSUFFICIENT_EVIDENCE":
+            total_weighted += 0.4 * v.confidence_score
         # CONTRADICTED = 0
 
     return min(1.0, total_weighted / len(verifications))
@@ -122,14 +130,19 @@ def calculate_source_quality(
 
 def calculate_factual_consistency(verifications: List[ClaimVerification]) -> float:
     """
-    VERIFIED iddia sayısının toplam iddia sayısına oranını hesaplar.
+    VERIFIED ve PARTIALLY_VERIFIED iddia oranını hesaplar.
     Bu metrik halüsinasyon ve yanlış atıf riskini gösterir.
     """
     if not verifications:
         return 0.0
 
-    verified_count = sum(1 for v in verifications if v.verification_status == "VERIFIED")
-    return verified_count / len(verifications)
+    verified_count = sum(
+        1.0 if v.verification_status == "VERIFIED"
+        else 0.8 if v.verification_status == "PARTIALLY_VERIFIED"
+        else 0.0
+        for v in verifications
+    )
+    return min(1.0, verified_count / len(verifications))
 
 
 def calculate_retrieval_recall(
@@ -195,7 +208,7 @@ def calculate_research_metrics(session_id: str, state: Dict[str, Any]) -> Evalua
     Returns:
         Hesaplanmış EvaluationMetrics nesnesi
     """
-    from config.settings import get_settings
+
     settings = get_settings()
 
     sub_questions: List[SubQuestion] = state.get("sub_questions", [])

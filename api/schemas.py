@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/api/schemas.py
 Görevi: FastAPI İstek (Request) ve Yanıt (Response) Pydantic Şemaları
 ==============================================================================
 Bu dosya, ResearchMind REST API'ının tüm HTTP istek ve yanıt veri yapılarını
@@ -15,13 +14,13 @@ tanımlar. Pydantic v2 ile tip güvenliği ve otomatik OpenAPI dokümantasyonu
   ReportResponse         → GET /api/research/{id}/report tam rapor yanıtı
   HealthResponse         → GET /health sistem durumu yanıtı
   MetricsResponse        → GET /api/research/{id}/metrics kalite metrikleri
+  ScopeGateResponse      → POST /api/research kapsam reddi/netleştirme yanıtı (Faz-7)
 ==============================================================================
 """
 
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
-
 
 class ResearchRequest(BaseModel):
     """Yeni araştırma başlatma isteği."""
@@ -61,12 +60,35 @@ class ClaimVerificationSummary(BaseModel):
     verification_status: str
     confidence_score: float
     source_reference: str
+    notes: Optional[str] = None
 
 
 class ReportSectionSummary(BaseModel):
-    """Rapor bölümü özeti."""
+    """Rapor bölümü özeti ve tam içeriği."""
     heading: str
-    content_preview: str = Field(description="Bölüm içeriğinin ilk 300 karakteri")
+    content: Optional[str] = None
+    content_preview: str = Field(default="", description="Bölüm içeriğinin ilk 300 karakteri")
+
+
+class AcademicPaperDetail(BaseModel):
+    """Akademik makale detayları."""
+    paper_id: str
+    title: str
+    authors: List[str] = Field(default_factory=list)
+    published_year: Optional[str] = None
+    url: Optional[str] = None
+    pdf_url: Optional[str] = None
+    abstract: Optional[str] = None
+    extracted_intel: Optional[Dict[str, Any]] = None
+    relevance_score: Optional[float] = 1.0
+
+
+class WebSourceDetail(BaseModel):
+    """Web kaynağı detayları."""
+    url: str
+    title: str
+    snippet: Optional[str] = None
+    relevance_score: Optional[float] = 1.0
 
 
 class ResearchStatusResponse(BaseModel):
@@ -91,11 +113,14 @@ class ReportResponse(BaseModel):
     title: str
     executive_summary: str
     sections: List[ReportSectionSummary]
+    report_markdown: Optional[str] = None
     comparative_analysis_markdown: Optional[str] = None
     verification_matrix_markdown: Optional[str] = None
     limitations_and_future_directions: str
     bibliography: List[Dict[str, str]]
     claim_verifications: List[ClaimVerificationSummary]
+    academic_papers: List[AcademicPaperDetail] = Field(default_factory=list)
+    web_sources: List[WebSourceDetail] = Field(default_factory=list)
     total_sources: int
     created_at: datetime
 
@@ -179,6 +204,7 @@ class SemanticSearchResponse(BaseModel):
     total_found: int = Field(description="Toplam bulunan kaynak sayısı")
 
 
+# ── Faz-7: Research Scope Gate ────────────────────────────────────────────────
 
 class ScopeGateResponse(BaseModel):
     """

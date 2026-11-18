@@ -1,27 +1,27 @@
+
 """
 ==============================================================================
 Dosya: researchmind/agents/report_agent.py
-Görevi: Nihai Araştırma Raporu Üretim Ajanı (Report Generation Agent)
+Görevi: Nihai Araştırma Raporu Üretim Ajanı
 ==============================================================================
-Bu ajan, araştırmanın tüm aşamalarını (Planlama, Makale Taraması, Web Taraması,
-Karşılaştırmalı Analiz ve Kanıt Doğrulama) bir araya getirerek kapsamlı,
-akademik ve kaynakçalı bir araştırma raporu üretir.
 
-Rapor Bileşenleri:
-1. Başlık ve Yönetici Özeti (Executive Summary)
-2. Derinlemesine Teknik Bölümler (Mimari, Eğitim, Veri Setleri, Benchmarklar)
-3. Modeller Arası Karşılaştırma Tablosu (Comparative Matrix)
-4. Evidence-Based Doğrulama Tablosu (Fact-Check Verification Matrix)
-5. Tespit Edilen Kısıtlar ve Gelecek Trendleri (Limitations & Future Directions)
-6. Tam Numaralandırılmış Kaynakça (Bibliography [1], [2]...)
-==============================================================================
+Sorumluluklar:
+- Araştırma çıktılarından akademik rapor oluşturmak.
+- Kaynak numaralarını deterministik biçimde yönetmek.
+- Analiz, narrative, karşılaştırma ve doğrulama çıktılarını birleştirmek.
+- Aynı bulguların farklı bölümlerde tekrarlanmasını önlemek.
+- Kanıtlarla desteklenmeyen bilgi üretmemek.
+- LLM kullanılamadığında güvenli ve kanıta dayalı fallback üretmek.
+
+Mevcut ResearchReport ve ResearchState arayüzleri korunmuştur.
 """
 
 import logging
-import re
-from typing import Dict, List
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
+
 from config.settings import get_settings
 from core.llm import get_planner_llm
 from core.state import (
@@ -29,36 +29,46 @@ from core.state import (
     ResearchState,
     AcademicPaperSource,
     WebSource,
-    ClaimVerification
+    ClaimVerification,
 )
 
 logger = logging.getLogger("ResearchMind.Agents.ReportAgent")
 
+import re
 
 def clean_executive_summary(text: str) -> str:
     """
     Yönetici özetindeki araya giren kaynak/atıf numaralarını ve köşeli parantez referanslarını temizler.
     
     Örnekler:
-      - 'Modeller [1] ve yöntemler [2, 3] geliştirilmiştir.' -> 'Modeller ve yöntemler geliştirilmiştir.'
+      - '[20], [35]. Bu mimari dönüşüm...' -> 'Bu mimari dönüşüm...'
+      - 'Bu araştırma [1], modellerin [2, 3] gelişimini analiz eder.' -> 'Bu araştırma, modellerin gelişimini analiz eder.'
       - 'Büyük ölçekli veri setleri [Kaynak 1-3] kullanılarak...' -> 'Büyük ölçekli veri setleri kullanılarak...'
       - 'Başarı oranı 2024 yılında %92 olarak ölçülmüştür.' -> (Tarih ve yüzdelere dokunulmaz!)
     """
     if not text:
         return ""
 
-    # 1. Köşeli parantez içindeki kaynak/sayı referansları: [1], [1, 2], [1-3], [Kaynak 1], [Source 1]
+    # 1. Parantezler arasındaki ayırıcı virgülleri temizle: [20], [35] -> [20] [35]
     cleaned = re.sub(
-        r'\[\s*(?:kaynak|source|ref|referans)?\s*\d+(?:\s*[,-–]\s*\d+)*\s*\]',
-        '',
+        r'(\[\s*(?:kaynak|source|ref|referans)?\s*\d+(?:\s*[,-–]\s*\d+)*\s*\])\s*,\s*(?=\[)',
+        r'\1 ',
         text,
         flags=re.IGNORECASE
     )
 
-    # 2. Art arda gelen veya tekil köşeli parantezli sayılar: [1][2]
+    # 2. Köşeli parantez içindeki kaynak/sayı referansları: [1], [1, 2], [1-3], [Kaynak 1], [Source 1]
+    cleaned = re.sub(
+        r'\[\s*(?:kaynak|source|ref|referans)?\s*\d+(?:\s*[,-–]\s*\d+)*\s*\]',
+        '',
+        cleaned,
+        flags=re.IGNORECASE
+    )
+
+    # 3. Art arda gelen veya tekil köşeli parantezli sayılar: [1][2]
     cleaned = re.sub(r'\[\s*\d+\s*\]', '', cleaned)
 
-    # 3. Parantez içindeki açık kaynak referansları: (Kaynak 1), (Source 1), (Ref 2)
+    # 4. Parantez içindeki açık kaynak referansları: (Kaynak 1), (Source 1), (Ref 2)
     cleaned = re.sub(
         r'\(\s*(?:kaynak|source|ref|referans)\s*\d+\s*\)',
         '',
@@ -66,117 +76,500 @@ def clean_executive_summary(text: str) -> str:
         flags=re.IGNORECASE
     )
 
-    # 4. Noktalama işaretlerinden önce oluşan gereksiz boşlukları düzelt: 'geliştirilmiştir . Bu' -> 'geliştirilmiştir. Bu'
+    # 5. Cümle başlarında veya satır başlarında sarkan noktalama işaretlerini (. , ; : -) temizle
+    cleaned = re.sub(r'(^|\n|[.!?]\s+)[\s,.;:-]+([A-ZÇĞİÖŞÜa-zçğıöşü])', r'\1\2', cleaned)
+
+    # 6. Metnin en başındaki olası sarkan noktalama işaretlerini temizle
+    cleaned = re.sub(r'^[ \t,.;:-]+', '', cleaned)
+
+    # 7. Noktalama işaretlerinden önce oluşan gereksiz boşlukları düzelt: 'geliştirilmiştir . Bu' -> 'geliştirilmiştir. Bu'
     cleaned = re.sub(r'\s+([.,;:!?])', r'\1', cleaned)
 
-    # 5. Silinen atıflar sonrası oluşan çift/çoklu boşlukları teke indir
+    # 8. Silinen atıflar sonrası oluşan çift/çoklu boşlukları teke indir
     cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
 
     return cleaned.strip()
 
 
+def clean_report_citations(text: str) -> str:
+    """
+    Raporun teknik alt bölümlerindeki atıf sözdizimini akademik ve akıcı hale getirir.
+    
+    Örnekler:
+      - '[20], [35]' -> '[20, 35]'
+      - '[20, 35]. Bu mimari dönüşüm...' -> 'İlgili araştırmalarda [20, 35], bu mimari dönüşüm...'
+      - '[1]. Model omurgası...' -> 'İlgili araştırmada [1], model omurgası...'
+    """
+    if not text:
+        return ""
+
+    # 1. Bitişik parantezleri tek parantezde birleştir: [20], [35] -> [20, 35]
+    pattern_brackets = r'\[\s*([\d\s,-–]+)\s*\]\s*,\s*\[\s*([\d\s,-–]+)\s*\]'
+    while re.search(pattern_brackets, text):
+        text = re.sub(pattern_brackets, r'[\1, \2]', text)
+
+    # 2. Cümle veya satır başında izole noktalı atıf varsa ('[20, 35]. Bu mimari...') bunu akıcı Türkçe yapıya dönüştür
+    def repl_leading_cite(m):
+        prefix = m.group(1) or ""
+        cites = m.group(2).strip()
+        first_char = m.group(3).lower()
+        word = "İlgili araştırmada" if ("," not in cites and "-" not in cites and "–" not in cites) else "İlgili araştırmalarda"
+        return f"{prefix}{word} [{cites}], {first_char}"
+
+    text = re.sub(r'(^|\n|[.!?]\s+)\[\s*([\d\s,-–]+)\s*\]\.\s+([A-ZÇĞİÖŞÜa-zçğıöşü])', repl_leading_cite, text)
+
+    # 3. Noktalama işaretlerinden önce oluşan gereksiz boşlukları toparla
+    text = re.sub(r'\s+([.,;:!?])', r'\1', text)
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _value(obj: Any, key: str, default: Any = None) -> Any:
+    """Pydantic model veya dict üzerinden güvenli alan erişimi."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _as_text(value: Any) -> str:
+    """None ve diğer değerleri güvenli metne dönüştürür."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    return str(value).strip()
+
+
+def _markdown_cell(value: Any) -> str:
+    """Markdown tablo hücresindeki özel karakterleri düzenler."""
+    text = _as_text(value)
+    return (
+        text.replace("|", "\\|")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+
+
+def _format_list(values: Any) -> str:
+    if not values:
+        return "Belirtilmemiş"
+
+    if isinstance(values, str):
+        return values
+
+    return ", ".join(_as_text(item) for item in values if item is not None)
+
+
+def _build_bibliography(
+    papers: List[AcademicPaperSource],
+    web_sources: List[WebSource],
+) -> List[Dict[str, str]]:
+    """
+    Kaynakları tek bir numaralandırılmış listede toplar.
+
+    Önemli:
+    Bu listedeki sıra, rapor içerisindeki [1], [2] atıflarının
+    karşılığıdır. LLM'e de aynı sıra ile gönderilir.
+    """
+    bibliography: List[Dict[str, str]] = []
+
+    for paper in papers:
+        authors = _value(paper, "authors", []) or []
+        title = _as_text(_value(paper, "title", "Başlıksız çalışma"))
+        year = _value(paper, "published_year", None)
+        url = _as_text(_value(paper, "url", ""))
+
+        authors_text = ", ".join(authors[:3]) if authors else "Yazar belirtilmemiş"
+
+        if len(authors) > 3:
+            authors_text += " vd."
+
+        citation = (
+            f"{authors_text} ({year or 'Yıl belirtilmemiş'}). "
+            f"\"{title}\"."
+        )
+
+        if url:
+            citation += f" {url}"
+
+        bibliography.append({
+            "index": str(len(bibliography) + 1),
+            "citation": citation,
+        })
+
+    for source in web_sources:
+        title = _as_text(_value(source, "title", "Başlıksız web kaynağı"))
+        url = _as_text(_value(source, "url", ""))
+
+        citation = f"{title}. Web kaynağı."
+
+        if url:
+            citation += f" {url}"
+
+        bibliography.append({
+            "index": str(len(bibliography) + 1),
+            "citation": citation,
+        })
+
+    return bibliography
+
+
+def _build_source_evidence(
+    papers: List[AcademicPaperSource],
+    web_sources: List[WebSource],
+    bibliography: List[Dict[str, str]],
+) -> str:
+    """
+    LLM'e kaynakların yalnızca başlıklarını değil, mevcut kanıt
+    içeriklerini de verir.
+
+    Her kaynak için bibliography index'i açıkça belirtilir.
+    """
+    evidence_blocks: List[str] = []
+
+    for index, paper in enumerate(papers):
+        extracted = _value(paper, "extracted_intel")
+        abstract = _as_text(_value(paper, "abstract", ""))
+
+        title = _as_text(_value(paper, "title", "Başlıksız çalışma"))
+        year = _value(paper, "published_year", "Belirtilmemiş")
+        url = _as_text(_value(paper, "url", ""))
+
+        block = [
+            f"[{index + 1}] {title}",
+            f"Yıl: {year}",
+            f"URL: {url or 'Belirtilmemiş'}",
+            f"Abstract: {abstract[:4500] or 'Mevcut değil'}",
+        ]
+
+        if extracted:
+            block.extend([
+                "Çıkarılan bilimsel bilgiler:",
+                f"- Mimari: {_as_text(_value(extracted, 'model_architecture', '')) or 'Belirtilmemiş'}",
+                f"- Eğitim yöntemi: {_as_text(_value(extracted, 'training_methodology', '')) or 'Belirtilmemiş'}",
+                f"- Veri setleri: {_format_list(_value(extracted, 'datasets_used', []))}",
+                f"- Benchmarklar: {_format_list(_value(extracted, 'evaluation_benchmarks', []))}",
+                f"- Bulgular: {_format_list(_value(extracted, 'key_findings', []))}",
+                f"- Sınırlılıklar: {_format_list(_value(extracted, 'limitations', []))}",
+            ])
+
+        evidence_blocks.append("\n".join(block))
+
+    offset = len(papers)
+
+    for index, source in enumerate(web_sources):
+        source_index = offset + index + 1
+
+        title = _as_text(_value(source, "title", "Başlıksız web kaynağı"))
+        url = _as_text(_value(source, "url", ""))
+        snippet = _as_text(_value(source, "snippet", ""))
+        full_content = _as_text(_value(source, "full_content", ""))
+
+        block = [
+            f"[{source_index}] {title}",
+            f"URL: {url or 'Belirtilmemiş'}",
+            f"Snippet: {snippet[:1500] or 'Mevcut değil'}",
+            f"Sayfa içeriği: {full_content[:4500] or 'Mevcut değil'}",
+        ]
+
+        evidence_blocks.append("\n".join(block))
+
+    return "\n\n---\n\n".join(evidence_blocks) or (
+        "Araştırma kapsamında kullanılabilecek kaynak içeriği bulunamadı."
+    )
+
+
+def _build_verification_matrix(
+    verifications: List[ClaimVerification],
+) -> str:
+    """İddia doğrulama kayıtlarından Markdown matrisi oluşturur."""
+
+    headers = (
+        "| İddia ID | İddia | Kaynak | Kanıt | Durum | Güven | Koşul / Açıklama |\n"
+        "|---|---|---|---|---|---|---|\n"
+    )
+
+    if not verifications:
+        return headers + (
+            "| - | Doğrulanmış iddia kaydı bulunmuyor | - | - | - | - | - |"
+        )
+
+    rows = []
+
+    for verification in verifications:
+        status = _as_text(
+            _value(verification, "verification_status", "NEEDS_VERIFICATION")
+        )
+
+        confidence = _value(verification, "confidence_score", None)
+
+        if confidence is not None:
+            confidence_text = f"{float(confidence) * 100:.0f}%"
+        else:
+            confidence_text = "Belirtilmemiş"
+
+        quote = _as_text(
+            _value(verification, "evidence_quote", "")
+        )
+
+        # Alıntıyı keserken doğrudan alıntı olduğunu koruyoruz.
+        if len(quote) > 240:
+            quote = quote[:237] + "..."
+
+        notes = _as_text(_value(verification, "notes", "-"))
+
+        rows.append(
+            "| "
+            + " | ".join([
+                _markdown_cell(_value(verification, "claim_id", "-")),
+                _markdown_cell(_value(verification, "claim_text", "-")),
+                _markdown_cell(_value(verification, "source_reference", "-")),
+                _markdown_cell(f'"{quote}"' if quote else "Kanıt alıntısı yok"),
+                _markdown_cell(status),
+                _markdown_cell(confidence_text),
+                _markdown_cell(notes),
+            ])
+            + " |"
+        )
+
+    return headers + "\n".join(rows)
+
+
+def _get_comparison_table(comp_data: Any) -> str:
+    if not isinstance(comp_data, dict):
+        return ""
+
+    table = comp_data.get("markdown_table", "")
+    return _as_text(table)
+
+
+def _get_narrative_context(narrative: Any) -> str:
+    """
+    Narrative Agent çıktısını yalnızca bağlamsal girdi olarak hazırlar.
+
+    Bu içerik doğrudan rapora section olarak eklenmez.
+    """
+    if not narrative:
+        return "Narrative Agent çıktısı mevcut değil."
+
+    field_context = _as_text(
+        _value(narrative, "field_context", "")
+    )
+
+    research_story = _as_text(
+        _value(narrative, "research_story", "")
+    )
+
+    key_insights = _value(narrative, "key_insights", []) or []
+
+    synthesis = _as_text(
+        _value(narrative, "synthesis_paragraph", "")
+    )
+
+    insights_text = "\n".join(
+        f"- {_as_text(item)}" for item in key_insights
+    )
+
+    return (
+        f"Alan bağlamı:\n{field_context or 'Belirtilmemiş'}\n\n"
+        f"Araştırma anlatısı:\n{research_story or 'Belirtilmemiş'}\n\n"
+        f"Kritik içgörüler:\n{insights_text or 'Belirtilmemiş'}\n\n"
+        f"Sentez:\n{synthesis or 'Belirtilmemiş'}"
+    )
+
+
+def _build_gap_context(comp_data: Any) -> str:
+    if not isinstance(comp_data, dict):
+        return ""
+
+    gaps = comp_data.get("gaps", [])
+    if not gaps:
+        return ""
+
+    if isinstance(gaps, str):
+        return gaps
+
+    return "\n".join(f"- {_as_text(gap)}" for gap in gaps)
+
+
+# ---------------------------------------------------------------------------
+# Structured LLM Output
+# ---------------------------------------------------------------------------
+
 class ReportSectionOutput(BaseModel):
-    """Raporun her bir alt bölümü."""
-    heading: str = Field(description="Bölüm başlığı (örn. '2. Temel Mimari Yaklaşımlar')")
-    content: str = Field(description="Bölümün detaylı, kaynakçalı akademik metni")
+    """Raporun dinamik alt bölümü."""
+
+    heading: str = Field(
+        description="Araştırma konusuna uygun, açıklayıcı bölüm başlığı."
+    )
+
+    content: str = Field(
+        description=(
+            "İlgili bölümün akademik anlatımı. "
+            "Kaynak gerektiren iddialar [1], [2] biçiminde atıflandırılmalıdır."
+        )
+    )
 
 
 class ReportSynthesisOutput(BaseModel):
     """
-    LLM'den dönen yapılandırılmış akademik metin sentezi çıktısı.
-    Tablolar ve kaynakça Python tarafında deterministik birleştirilir.
+    LLM tarafından oluşturulan rapor metni.
+
+    Karşılaştırma tablosu, doğrulama matrisi ve kaynakça
+    Python tarafında deterministik olarak oluşturulur.
     """
-    title: str = Field(description="Akademik araştırma raporu başlığı")
+
+    title: str = Field(
+        description="Araştırma konusunu doğru yansıtan akademik rapor başlığı."
+    )
+
     executive_summary: str = Field(
-        description="Yönetici özeti ve ana çıkarımlar. KESİNLİKLE [1], [2] gibi kaynak numaraları veya atıf etiketleri içermemeli, akıcı ve duru olmalıdır."
+        description=(
+            "Araştırmanın amacı, kapsamı, temel bulguları ve genel sonucunu "
+            "özetleyen kısa ve bütünlüklü yönetici özeti."
+        )
     )
+
     sections: List[ReportSectionOutput] = Field(
-        description="Raporun derinlemesine teknik bölümleri (atıflar [1], [2] burada kullanılmalıdır)"
+        description=(
+            "Araştırma konusuna özgü, birbirini tekrar etmeyen akademik "
+            "bölümler. Metodoloji, tematik bulgular ve sonuç gibi "
+            "ihtiyaç duyulan bölümleri içermelidir."
+        )
     )
+
     limitations_and_future_directions: str = Field(
-        description="Tespit edilen kısıtlar, açık problemler ve gelecek trendleri"
+        description=(
+            "Kanıtlardan çıkarılabilen sınırlılıklar, açık problemler "
+            "ve gelecekte araştırılabilecek yönler."
+        )
     )
 
 
-REPORT_SYSTEM_PROMPT = """Sen Baş Bilim Yazarı ve Kıdemli Araştırma Raporcususun (Report Generation Agent).
-Görevin, toplanan akademik makaleler, web kaynakları, karşılaştırmalı analizler ve kanıt doğrulama matrisini
-kullanarak yayınlanmaya hazır, yüksek kaliteli ve kapsamlı bir araştırma raporu kaleme almaktır.
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
 
-Raporlama İlkeleri:
-1. Akademik ve Nesnel Ton: Profesyonel, açık, teknik ve kanıta dayalı bir dil kullan.
-2. Numaralandırılmış Atıf Sistemi: İddia ve bulgularda kaynaklara [1], [2] şeklinde referans ver (YALNIZCA alt teknik bölümlerde geçerlidir).
-3. Yönetici Özeti (Executive Summary) Özel Kuralı:
-   - Yönetici Özeti, araştırmanın ana bulgularını, metodolojisini ve çıkarımlarını duru, akıcı ve profesyonel bir dille sunan üst düzey bir özetidir.
-   - KESİNLİKLE YÖNETİCİ ÖZETİ İÇERİSİNE [1], [2] GİBİ KAYNAK VEYA ATIF NUMARALARI KOYMA!
-   - Yönetici özeti kesintisiz ve temiz bir metin olmalıdır. Numaralandırılmış atıflar sadece teknik alt bölümlerde (sections) yer almalıdır.
-4. Bölüm Yapısı:
-   - Yönetici Özeti: Ana bulguları özetleyen, atıf numarası içermeyen duru bir giriş.
-   - Temel Mimari Yaklaşımlar: Görsel kodlayıcı, projektör ve LLM omurgası mimarileri.
-   - Eğitim Stratejileri ve Veri: Pre-training, instruction tuning ve alignment yaklaşımları.
-   - Karşılaştırmalı Performans ve Benchmarklar: Sayısal sonuçlar ve değerlendirme metrikleri.
-   - Kısıtlar ve Açık Problemler: Karşılaşılan engeller ve gelecekteki araştırma yönleri.
-5. Kaynakça: İncelenen makaleleri ve web sayfalarını numaralandırılmış biçimde listele.
+REPORT_SYSTEM_PROMPT = """
+Sen kıdemli bir akademik araştırma raporu yazarısın.
+
+Görevin, sana verilen araştırma çıktılarından kapsamlı, tutarlı,
+akademik, kanıta dayalı ve TEKRARLARDAN ARINDIRILMIŞ bir rapor oluşturmaktır.
+
+TEMEL İLKE:
+Yeni araştırma yapmıyorsun. Yeni kaynak, veri, metrik, model, tarih,
+deney sonucu veya bilimsel iddia üretmiyorsun. Yalnızca sana verilen
+kanıtları sentezliyorsun.
+
+1. BÖLÜM SÖZLEŞMELERİ VE SIFIR TEKRAR (ANTI-REPETITION CONTRACT):
+Raporda aynı bilginin, kavramın veya iddianın farklı başlıklar altında tekrar tekrar anlatılması KESİNLİKLE YASAKTIR.
+Her bölümün tek ve münhasır bir sorumluluğu vardır:
+
+a) YÖNETİCİ ÖZETİ (Executive Summary):
+   - Yalnızca araştırmanın nihai kararını, ana sorunun cevabını ve üst düzey 2-3 temel çıkarımı içerir.
+   - KESİNLİKLE YASAKTIR: Tarihsel arkaplan anlatmak (örn. Shor algoritması, kuantum tehdidinin tarihi vb.), terim tanımları yapmak, [1], [2] gibi atıf numaraları kullanmak.
+
+b) ARKA PLAN VE TEORİK ÇERÇEVE (varsa):
+   - Tarihsel motivasyon, kuramsal tehdit veya standartlaşma öncesi durum (örn. Shor algoritması, klasik kriptografinin zayıflıkları vb.) YALNIZCA bu bölümde bir kez ele alınır.
+   - Sonraki teknik bölümler bu arka planı ASLA tekrar anlatamaz.
+
+c) TEMATİK TEKNİK BÖLÜMLER:
+   - Araştırma konusuna göre dinamik başlıklar oluştur (örn. Standart Spesifikasyonları ve Taksonomi, Parametreler ve Güvenlik Kategorileri, Uygulama Analizi ve Performans vb.).
+   - Her teknik bölüm birbirinden tamamen bağımsız ve ayrık bir boyutu işler; bir bölümde anlatılan teknik detay başka bölümde yinelenemez.
+   - Taksonomik hassasiyet göster: Farklı ilkelleri (örn. KEM ile Dijital İmza) asla birbirine karıştırma. Güvenlik seviyelerini doğru eşleştir (örn. NIST Kategori 3 = AES-192 eşdeğeri, Kategori 1 = AES-128 eşdeğeri).
+
+d) SINIRLILIKLAR VE SALDIRI MODELLERİ (Limitations & Future Directions):
+   - Yalnızca çözülmemiş açıkları, kısıtları ve açık problemleri ele alır.
+   - Bir saldırı veya sızıntı iddiası (örn. yan kanal SCA veya hata enjeksiyonu FIA) varsa, bunu MUTLAKA ilgili saldırı modeline, hata türüne ve çalışma moduna bağlayarak açıkla (örn. deterministik mod vs rastgeleleştirilmiş mod).
+
+2. AKADEMİK ANLATIM VE DİL
+- Nesnel, profesyonel, akıcı ve analitik bir dil kullan.
+- Kaynakları tek tek özetlemek yerine ortak temaları sentezle.
+- Cümle başlarında izole noktalı atıf ('[1]. Bu mimari...') yapma; akıcı akademik Türkçe bağlaçlar kullan ('İlgili araştırmada [1]...', 'Elde edilen bulgular doğrultusunda [2, 3]...').
+
+3. ATIF VE KAYNAK KULLANIMI
+- Sana verilen kaynak kataloğundaki numaraları kullan.
+- Akademik iddiaları uygun yerlerde [1], [2] veya [1, 2] biçiminde kaynaklandır.
+- Kaynak numaralarını kendin oluşturma veya değiştirme.
+- Kaynak kataloğunda bulunmayan bir kaynağa atıf yapma.
+- Bir kaynağın desteklemediği iddiaya o kaynağı atama.
+
+4. TABLOLAR VE DOĞRULAMA MATRİSİ
+- Karşılaştırma tablosunu veya doğrulama matrisini metin içinde satır satır yeniden yazma. Yalnızca kritik eğilimleri ve sayısal verileri yorumla.
+
+5. NARRATIVE AGENT İLE İLİŞKİ
+- Narrative Agent çıktısı yalnızca genel araştırma vizyonunu anlaman içindir. Oradaki paragrafları veya içgörü cümlelerini kopyalayıp rapora yapıştırma; kendi sentezini üret.
 """
 
 
+# ---------------------------------------------------------------------------
+# Main LangGraph Node
+# ---------------------------------------------------------------------------
+
 def generate_research_report(state: ResearchState) -> dict:
     """
-    LangGraph düğümü: Tüm durumu toplar, nihai araştırma raporunu oluşturur
-    ve 'final_report' olarak kaydeder.
-    Narrative Agent'ın ürettiği anlatı (research_narrative) raporda
-    'Araştırma Anlatısı' bölümü olarak entegre edilir.
+    LangGraph düğümü:
+    Araştırma state'ini kullanarak nihai ResearchReport üretir.
+
+    Mevcut state ve API sözleşmesi korunur.
     """
-    query = state.get("research_query", "")
-    analysis_text = state.get("analysis_summary", "")
-    comp_data = state.get("comparative_data", {})
-    verifications: List[ClaimVerification] = state.get("claim_verifications", [])
-    papers: List[AcademicPaperSource] = state.get("academic_sources", [])
-    web_sources: List[WebSource] = state.get("web_sources", [])
-    narrative = state.get("research_narrative")  # Narrative Agent çıktısı
-    settings = get_settings()
 
-    logger.info("Report Generation Agent nihai raporu derliyor...")
+    query = _as_text(state.get("research_query", ""))
+    analysis_text = _as_text(state.get("analysis_summary", ""))
 
-    # 1. Doğrulama Matrisi Tablosunu Markdown Olarak Oluştur
-    matrix_rows = []
-    for v in verifications:
-        status_icon = "✅" if v.verification_status == "VERIFIED" else ("❌" if v.verification_status == "CONTRADICTED" else "⚠️")
-        quote = v.evidence_quote.replace("\n", " ")[:120]
-        matrix_rows.append(
-            f"| `{v.claim_id}` | {v.claim_text[:40]}... | {v.source_reference[:25]} | *\"{quote}\"* | {status_icon} {v.verification_status} | %{int(v.confidence_score * 100)} |"
-        )
-
-    verification_matrix_md = (
-        "| ID | İddia | Kaynak Referansı | Kanıt Alıntısı | Durum | Güven |\n"
-        "| :--- | :--- | :--- | :--- | :---: | :---: |\n" +
-        ("\n".join(matrix_rows) if matrix_rows else "| - | Doğrulama kaydı yok | - | - | - | - |")
+    comp_data = state.get("comparative_data", {}) or {}
+    verifications: List[ClaimVerification] = (
+        state.get("claim_verifications", []) or []
+    )
+    papers: List[AcademicPaperSource] = (
+        state.get("academic_sources", []) or []
+    )
+    web_sources: List[WebSource] = (
+        state.get("web_sources", []) or []
     )
 
-    # 2. Kaynakça Listesini Oluştur
-    bibliography = []
-    bib_counter = 1
-    for p in papers:
-        authors_str = ", ".join(p.authors[:3]) + (" vd." if len(p.authors) > 3 else "")
-        entry = {
-            "index": str(bib_counter),
-            "citation": f"[{bib_counter}] {authors_str} ({p.published_year or 'Bilinmiyor'}). \"{p.title}\". {p.url}"
-        }
-        bibliography.append(entry)
-        bib_counter += 1
+    narrative = state.get("research_narrative")
 
-    for w in web_sources:
-        entry = {
-            "index": str(bib_counter),
-            "citation": f"[{bib_counter}] {w.title}. Web Kaynağı: {w.url}"
-        }
-        bibliography.append(entry)
-        bib_counter += 1
+    settings = get_settings()
 
-    comp_table_md = comp_data.get("markdown_table", "")
+    logger.info("Report Agent: Nihai rapor hazırlanıyor.")
 
-    api_key = settings.GEMINI_API_KEY
+    # 1. Deterministik kaynakça
+    bibliography = _build_bibliography(papers, web_sources)
+
+    # 2. Karşılaştırma tablosu
+    comp_table_md = _get_comparison_table(comp_data)
+
+    # 3. Kanıt doğrulama matrisi
+    verification_matrix_md = _build_verification_matrix(verifications)
+
+    # 4. Kaynakların kanıt içerikleri
+    evidence_context = _build_source_evidence(
+        papers=papers,
+        web_sources=web_sources,
+        bibliography=bibliography,
+    )
+
+    # 5. Narrative bağlamı
+    narrative_context = _get_narrative_context(narrative)
+
+    # 6. Analiz boşlukları
+    gaps_context = _build_gap_context(comp_data)
+
+    # 7. API anahtarı kontrolü
+    api_key = getattr(settings, "GEMINI_API_KEY", None)
+
     if not api_key or api_key.startswith("buraya_"):
-        logger.warning("GEMINI_API_KEY tanımlanmamış, kural tabanlı zengin rapor şablonu üretiliyor.")
+        logger.warning(
+            "GEMINI_API_KEY bulunamadı. "
+            "Kanıta dayalı fallback raporu oluşturuluyor."
+        )
+
         report = generate_heuristic_report(
             query=query,
             analysis_text=analysis_text,
@@ -184,96 +577,143 @@ def generate_research_report(state: ResearchState) -> dict:
             verification_matrix_md=verification_matrix_md,
             bibliography=bibliography,
             papers=papers,
-            narrative=narrative
+            web_sources=web_sources,
+            comp_data=comp_data,
         )
+
         return {
             "final_report": report,
-            "audit_logs": ["[Report Agent] Kural tabanlı nihai araştırma raporu başarıyla üretildi."]
+            "audit_logs": [
+                "[Report Agent] LLM kullanılamadığı için "
+                "kanıta dayalı fallback raporu oluşturuldu."
+            ],
         }
 
     try:
         llm = get_planner_llm()
-        structured_llm = llm.with_structured_output(ReportSynthesisOutput)
-
-        sources_summary = "\n".join([b["citation"] for b in bibliography])
-
-        # Narrative bilgisini prompt'a ekle (varsa)
-        narrative_context = ""
-        if narrative:
-            narrative_context = (
-                f"\n\nAraştırma Anlatı Bağlamı (Narrative Agent çıktısı):\n"
-                f"Alan Bağlamı: {narrative.field_context}\n"
-                f"Araştırma Hikayesi: {narrative.research_story}\n"
-                f"Kritik İçgörüler: {'; '.join(narrative.key_insights)}\n"
-            )
-
-        user_content = (
-            f"Araştırma Konusu: {query}\n\n"
-            f"Analiz ve Sentez Bulguları:\n{analysis_text}\n\n"
-            f"Kullanılan Doğrulanmış Kaynaklar:\n{sources_summary}"
-            f"{narrative_context}\n\n"
-            f"Lütfen yukarıdaki bulguları kullanarak profesyonel, bölümlere ayrılmış akademik bir araştırma raporu metni oluştur."
+        structured_llm = llm.with_structured_output(
+            ReportSynthesisOutput
         )
+
+        bibliography_context = "\n".join(
+            f"[{item['index']}] {item['citation']}"
+            for item in bibliography
+        ) or "Kaynakça kaydı bulunamadı."
+
+        user_content = f"""
+ARAŞTIRMA SORUSU
+{query}
+
+ANALİZ AJANI ÇIKTISI
+{analysis_text or 'Analiz özeti mevcut değil.'}
+
+NARRATIVE AGENT BAĞLAMI
+{narrative_context}
+
+TESPİT EDİLEN ARAŞTIRMA BOŞLUKLARI
+{gaps_context or 'Ayrı bir boşluk kaydı bulunmuyor.'}
+
+KAYNAK KATALOĞU
+{bibliography_context}
+
+KAYNAK KANITLARI
+{evidence_context}
+
+KARŞILAŞTIRMALI ANALİZ TABLOSU
+{comp_table_md or 'Karşılaştırma tablosu mevcut değil.'}
+
+KANIT DOĞRULAMA MATRİSİ
+{verification_matrix_md}
+
+RAPOR ÜRETİM TALİMATI
+
+1. Araştırma sorusunu doğrudan yanıtlayan bir başlık oluştur.
+2. Yönetici özetini araştırmanın gerçek kapsamı ve mevcut bulgularıyla sınırla.
+3. Araştırma konusuna özgü tematik bölümler oluştur.
+4. Analiz bulgularını kaynak kanıtlarıyla sentezle.
+5. Karşılaştırma tablosunu ve doğrulama matrisini tekrar yazma.
+6. Narrative Agent çıktısını ayrı bir bölüm olarak kopyalama.
+7. Kaynak numaralarını kaynak kataloğuyla birebir eşleştir.
+8. Eksik bilgileri ve kanıt sınırlarını açıkça belirt.
+9. Birbirini tekrar eden bölümler oluşturma.
+10. Kaynaklarda bulunmayan hiçbir teknik veya sayısal iddia ekleme.
+
+Çıktı yalnızca istenen yapılandırılmış rapor alanlarını içermelidir.
+"""
 
         synthesis: ReportSynthesisOutput = structured_llm.invoke([
             SystemMessage(content=REPORT_SYSTEM_PROMPT),
-            HumanMessage(content=user_content)
+            HumanMessage(content=user_content),
         ])
 
-        # Narrative bölümünü rapora entegre et
-        sections_dict_list = []
-        if narrative:
-            # Araştırma Anlatısı bölümü — raporun ilk bölümü olarak eklenir
-            insights_md = "\n".join([f"- {ins}" for ins in narrative.key_insights])
-            narrative_section = {
-                "heading": "0. Araştırma Bağlamı ve Anlatısı",
-                "content": (
-                    f"### Alan Bağlamı\n{narrative.field_context}\n\n"
-                    f"### Araştırmanın Hikayesi\n{narrative.research_story}\n\n"
-                    f"### Kritik İçgörüler\n{insights_md}\n\n"
-                    f"### Sentez\n{narrative.synthesis_paragraph}"
-                )
+        # ÖNEMLİ:
+        # Atıflar temizlenmiyor veya yeniden yazılmıyor.
+        # Narrative Agent içeriği ayrıca section olarak eklenmiyor.
+        sections_dict_list = [
+            {
+                "heading": section.heading.strip(),
+                "content": clean_report_citations(section.content.strip()),
             }
-            sections_dict_list.append(narrative_section)
-
-        sections_dict_list += [{
-            "heading": s.heading,
-            "content": s.content
-        } for s in synthesis.sections]
-
-        cleaned_summary = clean_executive_summary(synthesis.executive_summary)
+            for section in synthesis.sections
+            if section.heading.strip() and section.content.strip()
+        ]
 
         report = ResearchReport(
-            title=synthesis.title,
-            executive_summary=cleaned_summary,
+            title=synthesis.title.strip() or f"Araştırma Raporu: {query}",
+            executive_summary=clean_executive_summary(synthesis.executive_summary.strip()),
             sections=sections_dict_list,
             comparative_analysis_markdown=comp_table_md,
             verification_matrix_markdown=verification_matrix_md,
-            limitations_and_future_directions=synthesis.limitations_and_future_directions,
-            bibliography=bibliography
+            limitations_and_future_directions=clean_report_citations(
+                synthesis.limitations_and_future_directions.strip()
+            ),
+            bibliography=bibliography,
         )
 
-        logger.info("Nihai araştırma raporu LLM ile başarıyla üretildi.")
+        logger.info(
+            "Report Agent: LLM ile nihai rapor başarıyla oluşturuldu. "
+            "Bölüm sayısı: %d, kaynak sayısı: %d",
+            len(sections_dict_list),
+            len(bibliography),
+        )
+
         return {
             "final_report": report,
-            "audit_logs": ["[Report Agent] Kapsamlı ve doğrulanmış araştırma raporu başarıyla oluşturuldu."]
+            "audit_logs": [
+                "[Report Agent] Kanıta dayalı akademik rapor "
+                "başarıyla oluşturuldu."
+            ],
         }
 
-    except Exception as e:
-        logger.error(f"Report Agent çalışırken hata oluştu: {e}. Heuristic rapora geçiliyor.")
+    except Exception as exc:
+        logger.exception(
+            "Report Agent LLM üretiminde hata oluştu. "
+            "Fallback rapora geçiliyor."
+        )
+
         report = generate_heuristic_report(
             query=query,
             analysis_text=analysis_text,
             comp_table_md=comp_table_md,
             verification_matrix_md=verification_matrix_md,
             bibliography=bibliography,
-            papers=papers
+            papers=papers,
+            web_sources=web_sources,
+            comp_data=comp_data,
         )
+
         return {
             "final_report": report,
-            "audit_logs": [f"[Report Agent] LLM hatası sonrası yedek rapor üretildi ({type(e).__name__})."]
+            "audit_logs": [
+                "[Report Agent] LLM üretimi başarısız oldu. "
+                f"Fallback rapor oluşturuldu ({type(exc).__name__})."
+            ],
         }
 
+
+# ---------------------------------------------------------------------------
+# Safe Fallback
+# ---------------------------------------------------------------------------
 
 def generate_heuristic_report(
     query: str,
@@ -282,78 +722,91 @@ def generate_heuristic_report(
     verification_matrix_md: str,
     bibliography: List[Dict[str, str]],
     papers: List[AcademicPaperSource],
-    narrative=None
+    web_sources: List[WebSource],
+    comp_data: Any = None,
 ) -> ResearchReport:
-    """API erişimi olmadığında veya hata anında yüksek kaliteli deterministik rapor üretir.
-    Narrative Agent çıktısı varsa ilk bölüm olarak rapora eklenir.
     """
-    title = f"Derin Araştırma Raporu: {query}"
-    exec_summary = (
-        f"Bu rapor, '{query}' sorusunu aydınlatmak üzere akademik literatürden ve güvenilir web kaynaklarından "
-        f"elde edilen kanıtların çapraz analiziyle hazırlanmıştır. İncelenen {len(papers)} akademik çalışma, "
-        "araştırma konusunun parametre verimliliği ve ölçeklenme kabiliyetleri üzerine kritik içgörüler sunmaktadır."
+    LLM kullanılamadığında güvenli rapor iskeleti üretir.
+
+    Bu fonksiyonun amacı LLM kalitesinde akademik metin üretmek değildir.
+    Mevcut kanıtları koruyan, uydurma bilgi eklemeyen bir fallback
+    sağlamaktır.
+    """
+
+    paper_count = len(papers)
+    web_count = len(web_sources)
+
+    title = f"Araştırma Raporu: {query}"
+
+    executive_summary = (
+        f"Bu rapor, '{query}' araştırma sorusu kapsamında "
+        f"toplanan mevcut kaynaklar ve analiz çıktıları kullanılarak "
+        f"hazırlanmıştır. Araştırma kapsamında {paper_count} akademik "
+        f"çalışma ve {web_count} web kaynağı bulunmaktadır. "
+        f"Bu sürümde otomatik akademik sentez üretilemediğinden, "
+        f"rapor içeriği mevcut analiz ve kanıt kayıtlarıyla sınırlıdır."
     )
 
-    sections = []
+    sections: List[Dict[str, str]] = []
 
-    # Narrative Agent çıktısı varsa ilk bölüm olarak ekle
-    if narrative:
-        insights_md = "\n".join([f"- {ins}" for ins in narrative.key_insights])
+    if analysis_text:
         sections.append({
-            "heading": "0. Araştırma Bağlamı ve Anlatısı",
+            "heading": "Araştırma Bulguları ve Analiz",
+            "content": analysis_text,
+        })
+    else:
+        sections.append({
+            "heading": "Araştırma Bulguları ve Analiz",
             "content": (
-                f"### Alan Bağlamı\n{narrative.field_context}\n\n"
-                f"### Araştırmanın Hikayesi\n{narrative.research_story}\n\n"
-                f"### Kritik İçgörüler\n{insights_md}\n\n"
-                f"### Sentez\n{narrative.synthesis_paragraph}"
-            )
+                "Analiz ajanından kullanılabilir bir araştırma özeti "
+                "alınamadı. Bu nedenle mevcut raporda bilimsel bulgu "
+                "veya sonuç iddiası oluşturulmamıştır."
+            ),
         })
 
-    sections += [
-        {
-            "heading": "1. Giriş ve Araştırma Kapsamı",
-            "content": (
-                f"Kullanıcı tarafından yöneltilen '{query}' problemine yanıt aramak adına sistematik bir derin araştırma "
-                "yürütülmüştür. Araştırma; mimari bileşenler, eğitim yöntemleri, değerlendirme kıstasları ve sınırlılıklar "
-                "olmak üzere 4 temel teknik boyutta derinleştirilmiştir."
-            )
-        },
-        {
-            "heading": "2. Temel Mimari Yaklaşımlar ve Yenilikler",
-            "content": (
-                "İncelenen çalışmalarda öne çıkan en belirgin mimari eğilim, önceden eğitilmiş yüksek çözünürlüklü "
-                "kodlayıcıların birleştirici projektörler (MLP veya Cross-Attention) aracılığıyla "
-                "büyük dil modeli omurgalarına bağlanmasıdır [1]. Bu yapı, token verimliliğini korurken bağlam "
-                "kaybını minimize etmektedir."
-            )
-        },
-        {
-            "heading": "3. Eğitim Metodolojileri ve Veri Kümeleri",
-            "content": (
-                "Eğitim süreçleri genellikle iki ana evreden oluşmaktadır: Geniş ölçekli veri çiftleriyle yapılan "
-                "ön eğitim (Pre-training) ve yüksek kaliteli sentetik/talimat verileriyle uygulanan denetimli ince ayar (SFT) [2]. "
-                "Son dönemde Direct Preference Optimization (DPO) gibi doğrudan tercih optimizasyonları ile halüsinasyon "
-                "oranlarının ciddi oranda düşürüldüğü görülmektedir."
-            )
-        },
-        {
-            "heading": "4. Karşılaştırmalı Performans ve Analiz",
-            "content": analysis_text or "Toplanan kanıtlar genel performans artışını doğrulamaktadır."
-        }
-    ]
+    limitations_parts = []
 
-    limitations = (
-        "Mevcut yaklaşımların en belirgin kısıtları; yüksek çözünürlüklü içerik analizinde artan hesaplama maliyeti, "
-        "uzun bağlam pencerelerinde dikkat zayıflaması ve çok dilli değerlendirme benchmarklarındaki veri yetersizliğidir."
-    )
+    gaps = _build_gap_context(comp_data)
+
+    if gaps:
+        limitations_parts.append(
+            "Analiz aşamasında kaydedilen araştırma boşlukları:\n" + gaps
+        )
+
+    if not papers and not web_sources:
+        limitations_parts.append(
+            "Araştırma kapsamında kullanılabilir akademik veya web "
+            "kaynağı bulunmamaktadır."
+        )
+
+    if not verifications_available(verification_matrix_md):
+        limitations_parts.append(
+            "İddialar için kullanılabilir doğrulama kaydı bulunmamaktadır."
+        )
+
+    if not limitations_parts:
+        limitations_parts.append(
+            "LLM tabanlı sentez üretimi gerçekleştirilemediği için "
+            "kaynakların kapsamlı eleştirel değerlendirmesi ve gelecek "
+            "araştırma yönleri bu fallback sürümünde oluşturulmamıştır."
+        )
+
+    limitations = "\n\n".join(limitations_parts)
 
     return ResearchReport(
         title=title,
-        executive_summary=exec_summary,
+        executive_summary=executive_summary,
         sections=sections,
         comparative_analysis_markdown=comp_table_md,
         verification_matrix_markdown=verification_matrix_md,
         limitations_and_future_directions=limitations,
-        bibliography=bibliography
+        bibliography=bibliography,
     )
 
+
+def verifications_available(matrix: str) -> bool:
+    """Boş doğrulama matrisi durumunu kontrol eder."""
+    return (
+        bool(matrix)
+        and "Doğrulanmış iddia kaydı bulunmuyor" not in matrix
+    )

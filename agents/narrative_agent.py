@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/narrative_agent.py
 Görevi: Araştırma Anlatı ve Bağlam Sentezi Ajanı (Research Narrative Agent)
 ==============================================================================
 Bu ajan, ResearchMind'ın ürettiği teknik verileri (makaleler, karşılaştırma
@@ -93,6 +92,10 @@ Anlatı Yazım İlkeleri:
 5. DİL TONU: Akademik ama erişilebilir. Teknik terimleri açıklamak zorunda değilsin ama robotik liste diline düşme. Akıcı paragraflar yaz.
 
 6. DOĞRULUĞA BAĞLI KAL: Yalnızca sana verilen kanıtlara dayan. Kanıtlanmamış iddia kurma.
+
+7. TEKRARDAN KAÇINMA VE SORUMLULUK AYRIMI (CONTRACT):
+   - Narrative Agent'ın sorumluluğu BÜYÜK RESMİ (alanın evrimini, motivasyonunu, neden kritik olduğunu ve stratejik sentezi) ortaya koymaktır.
+   - Sayısal parametre tabloları, mikro donanım saldırı detayları ve satır satır spesifikasyonlar alt teknik bölümlerin görevidir; bu detaylara boğulma.
 """
 
 
@@ -207,11 +210,11 @@ def _generate_heuristic_narrative(
 
     return ResearchNarrativeOutput(
         field_context=(
-            f"'{query}' konusu, modern yapay zeka ve bilgisayarlı görme araştırmalarının "
+            f"'{query}' konusu, modern bilimsel ve teknik araştırmaların "
             f"kesişiminde yer alan ve son yıllarda hızla gelişen bir alan olarak öne çıkmaktadır. "
             f"{year_range} yürütülen bu araştırma, {paper_count} akademik çalışmayı ve güncel "
             f"web kaynaklarını kapsayan sistematik bir literatür taramasına dayanmaktadır. "
-            f"Bu alandaki gelişmeler hem akademik hem de endüstriyel uygulamalar açısından "
+            f"Bu alandaki gelişmeler hem akademik hem de pratik uygulamalar açısından "
             f"kritik öneme sahip olup giderek artan bir araştırmacı ilgisi çekmektedir."
         ),
         research_story=(

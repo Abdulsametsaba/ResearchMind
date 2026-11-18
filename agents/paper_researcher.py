@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/paper_researcher.py
 Görevi: Akademik Makale Araştırmacı Ajanı (Paper Researcher Agent)
 ==============================================================================
 Bu ajan, araştırma planındaki akademik odaklı alt soruları işler:
@@ -35,16 +34,16 @@ from tools.pdf_reader import download_and_extract_pdf_text, extract_targeted_sec
 logger = logging.getLogger("ResearchMind.Agents.PaperResearcher")
 
 
-PAPER_EXTRACTION_PROMPT = """Sen uzman bir Bilgisayar Bilimleri Araştırmacısı ve Makale Analistisin (Academic Paper Intelligence Agent).
+PAPER_EXTRACTION_PROMPT = """Sen uzman bir Bilimsel Araştırmacı ve Makale Analistisin (Academic Paper Intelligence Agent).
 Aşağıda başlığı, özeti ve seçilmiş PDF bölümleri verilen akademik makaleyi derinlemesine incele.
 
 Makaleden aşağıdaki yapılandırılmış teknik bilgileri çıkar:
-1. model_architecture: Kullanılan omurga mimari (örn. 'ViT-B/16 + LLaMA-2 decoder with cross-attention projector').
-2. training_methodology: Eğitim stratejisi (örn. 'İki aşamalı ön eğitim, ardından LLaVA-150K ile supervised fine-tuning ve DPO hizalaması').
-3. datasets_used: Eğitim veya testte kullanılan spesifik veri setlerinin listesi.
-4. evaluation_benchmarks: Test edilen benchmark adları ve elde edilen sayısal skorlar (örn. {"MMBench": "78.4", "MME": "1840", "POPE": "86.2"}).
-5. key_findings: Makalenin sunduğu en önemli yenilik ve kazanımların kısa maddeleri.
-6. limitations: Makalenin açıkça belirttiği veya yöntemdeki eksiklikler, yüksek maliyet, çözülemeyen durumlar.
+1. model_architecture: Kullanılan temel algoritma, matematiksel şema veya model mimarisi (örn. 'ML-KEM-768 lattice-based KEM', 'ML-DSA-65', 'Transformer-based encoder', 'ResNet' vb.).
+2. training_methodology: Yöntem, protokol, tasarım felsefesi veya eğitim stratejisi (örn. 'FIPS 203 uyumlu parametre seçimi, NTT optimizasyonu' veya 'İki aşamalı ön eğitim ve denetimli ince ayar').
+3. datasets_used: Deney, benchmark, parametre seti veya test için kullanılan veri kümeleri / standartlar (örn. 'NIST FIPS 203 test vektörleri' veya 'ImageNet, MMBench').
+4. evaluation_benchmarks: Test edilen ölçütler, güvenlik kategorileri veya elde edilen sayısal skorlar (örn. {"NIST_Security_Category": "3 (AES-192 eşdeğeri)", "PublicKey_Bytes": "1184", "Accuracy": "84.2%"}).
+5. key_findings: Makalenin sunduğu en önemli yenilik ve kazanımların kısa ve somut maddeleri.
+6. limitations: Makalenin açıkça belirttiği veya yöntemdeki eksiklikler, saldırı açıkları (yan kanal, hata enjeksiyonu vb.), yüksek hesaplama maliyeti veya çözülemeyen durumlar.
 
 Metinde açıkça bulunmayan bilgiler için tahmin yapma, null veya boş liste bırak.
 """

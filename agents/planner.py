@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/planner.py
 Görevi: Araştırma Planlayıcı Ajan (Research Planner Agent)
 ==============================================================================
 Bu ajan, kullanıcının girdiği karmaşık araştırma sorusunu analiz eder ve
@@ -39,25 +38,35 @@ class PlanResponse(BaseModel):
 
 
 PLANNER_SYSTEM_PROMPT = """Sen üst düzey bir Kıdemli Araştırma Mimarı ve Baş Bilim İnsanısın (Research Planner Agent).
-Görevin, kullanıcının verdiği karmaşık teknik/akademik araştırma sorusunu veya problemini incelemek ve bunu çok aşamalı, kapsamlı bir araştırma planına dönüştürmektir.
+Görevin, kullanıcının verdiği karmaşık teknik/akademik araştırma sorusunu veya problemini incelemek ve bunu her bilimsel disipline uyarlanabilir, çok aşamalı, kapsamlı bir araştırma planına dönüştürmektir.
 
 Planlama Kuralları:
-1. Soru derin ve kapsamlıysa, konuyu şu ana boyutlara ayır:
-   - Temel Mimari Yaklaşımlar & Tasarım Felsefeleri (Architectural Innovations)
-   - Eğitim Yöntemleri ve Hizalama Teknikleri (Training, Pretraining, SFT, DPO/RLHF)
-   - Kullanılan Veri Kümeleri & Sentetik Veri Yaklaşımları (Datasets & Data Mixtures)
-   - Değerlendirme Benchmark'ları ve Karşılaştırmalı Performanslar (Evaluation Metrics & Leaderboards)
-   - Sektörel/Akademik Kısıtlar, Çözülmemiş Problemler ve Gelecek Trendleri (Limitations & Open Challenges)
+1. Konunun Alanını Belirle ve Ona Göre Boyutlandır:
+   - Kriptografi ve Güvenlik ise:
+     * Matematiksel ve Standart Temeller (örn. Kafes temelli LWE, FIPS standartları, temel tehditler)
+     * Kriptografik İlkeller ve Mekanizmalar (KEM vs Dijital İmza ayrımı, kapsülleme/doğrulama akışı)
+     * Sayısal Parametreler, Anahtar/İmza Boyutları ve Güvenlik Kategorileri (NIST Seviye 1-5, AES eşdeğerlikleri)
+     * Uygulama Saldırı Modelleri (Yan kanal SCA, hata enjeksiyonu FIA, deterministik mod riskleri) ve Savunmalar
+   - Yapay Zeka / Derin Öğrenme ise:
+     * Mimari Omurgalar ve Yapısal Yenilikler
+     * Metodoloji, Eğitim Stratejileri ve Veri Kümeleri
+     * Benchmark Değerlendirmeleri ve Sayısal Metrikler
+     * Hesaplama Maliyeti, Çıkarım Limitleri ve Açık Sorunlar
+   - Genel Mühendislik / Dağıtık Sistemler / Diğer Alanlar ise:
+     * Kuramsal Çerçeve, Standartlar ve Temel İlkeler
+     * Tasarım Mekanizmaları, Algoritmalar ve Spesifikasyonlar
+     * Karşılaştırmalı Performans, Dayanıklılık ve Deneysel Ölçütler
+     * Kısıtlar, Güvenlik Açıkları ve Açık Problemler
 
 2. Her alt soru için 'target_type' belirle:
-   - 'academic': Teori, formülasyon, makale mimarisi, benchmark tabloları için.
-   - 'web': Açık kaynak kod depoları, güncel model sürümleri, şirket blogları ve haberler için.
+   - 'academic': Teori, formülasyon, standart spesifikasyonları, makale mimarisi, tablolar için.
+   - 'web': Resmi standart belgeleri (NIST CSRC, RFC), açık kaynak implementasyonları, resmi duyurular için.
    - 'both': Hem akademik hem pratik doğrulama gerektiren konular için.
 
 3. Her alt soru için 2-3 adet net, İngilizce teknik arama sorgusu (search_queries) oluştur.
-   (Akademik veritabanları arXiv ve Semantic Scholar en iyi İngilizce terimlerle sonuç verir.)
+   (Akademik veritabanları arXiv ve Semantic Scholar ile arama motorları en iyi İngilizce terimlerle sonuç verir.)
 
-4. Alt soru sayısını 3 ile 5 arasında sınırla (kalite ve odaklanma önceliklidir).
+4. Alt soru sayısını 3 ile 5 arasında sınırla (kalite, derinlik ve modüler sorumluluk önceliklidir).
 """
 
 
@@ -126,41 +135,87 @@ def plan_research(state: ResearchState) -> dict:
 
 def generate_heuristic_plan(query: str) -> List[SubQuestion]:
     """
-    API erişimi olmadığında veya hata durumunda deterministik, yüksek kaliteli
-    yedek araştırma planı üretir.
+    API erişimi olmadığında veya hata durumunda deterministik, konuya duyarlı
+    ve yüksek kaliteli yedek araştırma planı üretir.
     """
     clean_query = query.replace('"', '').strip()
+    lower_q = clean_query.lower()
+
+    # Kriptografi / Güvenlik / Post-Quantum kontrolü
+    is_crypto = any(k in lower_q for k in [
+        "kem", "dsa", "fips", "post-quantum", "kuantum", "rsa", "ecc",
+        "kripto", "lattice", "kyber", "dilithium", "sphincs", "security"
+    ])
+
+    if is_crypto:
+        return [
+            SubQuestion(
+                id="SQ-1",
+                question=f"{clean_query} kapsamında temel standartlar, matematiksel temeller ve kriptografik ilkeller (KEM vs İmza) nelerdir?",
+                rationale="FIPS 203/204 gibi standartların ve algoritmik temellerin rolünü belirlemek için.",
+                target_type="academic",
+                search_queries=[
+                    f"{clean_query} NIST FIPS standards specifications",
+                    f"{clean_query} lattice-based cryptography foundations"
+                ],
+                status="pending"
+            ),
+            SubQuestion(
+                id="SQ-2",
+                question=f"{clean_query} için güvenlik kategorileri (NIST Levels 1-5), anahtar/imza boyutları ve performans metrikleri nelerdir?",
+                rationale="Farklı algoritmaların parametre ve güvenlik eşdeğerliklerini somut verilerle kıyaslamak için.",
+                target_type="both",
+                search_queries=[
+                    f"{clean_query} key size ciphertext benchmark performance",
+                    f"{clean_query} NIST security category comparison"
+                ],
+                status="pending"
+            ),
+            SubQuestion(
+                id="SQ-3",
+                question=f"{clean_query} için yan kanal (SCA) ve hata enjeksiyonu (FIA) saldırı modelleri, kısıtlar ve savunma mekanizmaları nelerdir?",
+                rationale="Pratik donanım/yazılım uygulama açıklarını ve koruma yöntemlerini netleştirmek için.",
+                target_type="both",
+                search_queries=[
+                    f"{clean_query} side-channel fault injection attack vulnerabilities",
+                    f"{clean_query} practical implementation limitations"
+                ],
+                status="pending"
+            )
+        ]
+
+    # Genel Bilimsel / Teknik Plan
     return [
         SubQuestion(
             id="SQ-1",
-            question=f"{clean_query} kapsamındaki temel model mimarileri ve yapısal yaklaşımlar nelerdir?",
-            rationale="Konunun mimari temelini ve yeniliklerini kavramak için.",
+            question=f"{clean_query} kapsamındaki temel mimari yaklaşımlar, algoritmalar ve tasarım ilkeleri nelerdir?",
+            rationale="Konunun teorik ve yapısal temellerini kavramak için.",
             target_type="academic",
             search_queries=[
-                f"{clean_query} model architecture survey",
-                f"{clean_query} novel architecture 2024 2025"
+                f"{clean_query} architecture mechanism survey",
+                f"{clean_query} fundamental algorithms specifications"
             ],
             status="pending"
         ),
         SubQuestion(
             id="SQ-2",
-            question=f"{clean_query} için kullanılan eğitim yöntemleri, aşamaları ve veri kümeleri nelerdir?",
-            rationale="Eğitim süreçlerini ve veri hazırlık stratejilerini analiz etmek için.",
+            question=f"{clean_query} için uygulanan metodolojiler, deneysel protokoller ve değerlendirme kriterleri nelerdir?",
+            rationale="Süreç tasarımını ve deneysel yöntemleri analiz etmek için.",
             target_type="academic",
             search_queries=[
-                f"{clean_query} training methodology pretraining alignment",
-                f"{clean_query} dataset benchmark evaluation"
+                f"{clean_query} methodology experimental protocols",
+                f"{clean_query} benchmark evaluation metrics"
             ],
             status="pending"
         ),
         SubQuestion(
             id="SQ-3",
-            question=f"Geliştirilen modellerin performans karşılaştırmaları, avantajları ve kısıtları (limitations) nelerdir?",
-            rationale="Farklı yaklaşımların birbirine üstünlüklerini ve açık problemlerini belirlemek için.",
+            question=f"{clean_query} alanındaki yaklaşımların nicel performans karşılaştırmaları, avantajları ve kısıtları (limitations) nelerdir?",
+            rationale="Farklı çözümlerin üstünlüklerini, darboğazlarını ve açık araştırma sorularını belirlemek için.",
             target_type="both",
             search_queries=[
-                f"{clean_query} benchmark comparison performance",
-                f"{clean_query} limitations challenges"
+                f"{clean_query} quantitative comparison performance",
+                f"{clean_query} limitations open challenges"
             ],
             status="pending"
         )

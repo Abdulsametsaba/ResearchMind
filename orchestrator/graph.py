@@ -98,6 +98,7 @@ def build_researchmind_graph():
     Returns:
         Compiled StateGraph nesnesi
     """
+    
     workflow = StateGraph(ResearchState)
 
     # Düğümleri Ekle (Nodes)

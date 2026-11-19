@@ -346,6 +346,45 @@ async def get_report(
     return result.scalar_one_or_none()
 
 
+async def get_papers_by_session(
+    db: AsyncSession,
+    session_id: str,
+) -> List[AcademicPaperModel]:
+    """Bir araştırmaya ait tüm akademik makaleleri getirir."""
+    result = await db.execute(
+        select(AcademicPaperModel).where(
+            AcademicPaperModel.session_id == session_id
+        ).order_by(AcademicPaperModel.relevance_score.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_web_sources_by_session(
+    db: AsyncSession,
+    session_id: str,
+) -> List[WebSourceModel]:
+    """Bir araştırmaya ait tüm web kaynaklarını getirir."""
+    result = await db.execute(
+        select(WebSourceModel).where(
+            WebSourceModel.session_id == session_id
+        ).order_by(WebSourceModel.relevance_score.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_verifications_by_session(
+    db: AsyncSession,
+    session_id: str,
+) -> List[ClaimVerificationModel]:
+    """Bir araştırmaya ait tüm iddia doğrulama kayıtlarını getirir."""
+    result = await db.execute(
+        select(ClaimVerificationModel).where(
+            ClaimVerificationModel.session_id == session_id
+        )
+    )
+    return list(result.scalars().all())
+
+
 # ─── Faz-6: Semantic Memory — Embedding Kayıt ve Arama ───────────────────────
 
 async def save_paper_embeddings(

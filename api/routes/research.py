@@ -1,5 +1,6 @@
 """
 ==============================================================================
+Dosya: researchmind/api/routes/research.py
 Görevi: Araştırma İşlemleri REST API Endpoint'leri (Faz-5+6+7)
 ==============================================================================
 Endpoint'ler:
@@ -54,7 +55,7 @@ from orchestrator.graph import get_research_graph
 from evaluation.metrics import calculate_research_metrics
 
 from tools.embeddings import (
-        generate_embedding, build_paper_text, build_web_source_text,build_query_text
+        generate_embedding, build_paper_text, build_web_source_text, build_query_text
     )
 
 from agents.scope_gate import evaluate_research_scope, ScopeDecision
@@ -91,7 +92,7 @@ async def _generate_and_save_embeddings(
     Hata toleranslı: Embedding hatası araştırmanın durumunu etkilemez.
     Thread pool'da (run_in_executor) çalıştırılır — Gemini API senkron çağrıdır.
     """
-    
+
     papers      = final_state.get("academic_sources", [])
     web_sources = final_state.get("web_sources", [])
 
@@ -496,7 +497,7 @@ async def search_semantic_memory(
     Bu endpoint kullanıcının araştırma başlatmadan önce mevcut hafızada
     ne olduğunu keşfetmesini sağlar.
     """
-   
+
     loop = asyncio.get_event_loop()
     embedding = await loop.run_in_executor(
         _executor, generate_embedding, build_query_text(q)
@@ -631,10 +632,51 @@ async def get_research_report(
     if not db_report:
         raise HTTPException(status_code=404, detail="Rapor henüz DB'ye kaydedilmedi.")
 
-    # DB'den kaynakları ve doğrulamaları yükle
-    db_papers = await db_service.get_papers_by_session(db, session_id)
-    db_web = await db_service.get_web_sources_by_session(db, session_id)
-    db_claims = await db_service.get_verifications_by_session(db, session_id)
+    # DB'den kaynakları ve doğrulamaları yükle (güvenli fallback koruması ile)
+    try:
+        if hasattr(db_service, "get_papers_by_session"):
+            db_papers = await db_service.get_papers_by_session(db, session_id)
+        else:
+            try:
+                from database.models import AcademicPaperModel
+            except ImportError:
+                from database.models import AcademicPaperModel
+            from sqlalchemy import select
+            res = await db.execute(select(AcademicPaperModel).where(AcademicPaperModel.session_id == session_id))
+            db_papers = list(res.scalars().all())
+    except Exception as e:
+        logger.warning(f"Makaleler DB'den çekilemedi: {e}")
+        db_papers = []
+
+    try:
+        if hasattr(db_service, "get_web_sources_by_session"):
+            db_web = await db_service.get_web_sources_by_session(db, session_id)
+        else:
+            try:
+                from database.models import WebSourceModel
+            except ImportError:
+                from database.models import WebSourceModel
+            from sqlalchemy import select
+            res = await db.execute(select(WebSourceModel).where(WebSourceModel.session_id == session_id))
+            db_web = list(res.scalars().all())
+    except Exception as e:
+        logger.warning(f"Web kaynakları DB'den çekilemedi: {e}")
+        db_web = []
+
+    try:
+        if hasattr(db_service, "get_verifications_by_session"):
+            db_claims = await db_service.get_verifications_by_session(db, session_id)
+        else:
+            try:
+                from database.models import ClaimVerificationModel
+            except ImportError:
+                from database.models import ClaimVerificationModel
+            from sqlalchemy import select
+            res = await db.execute(select(ClaimVerificationModel).where(ClaimVerificationModel.session_id == session_id))
+            db_claims = list(res.scalars().all())
+    except Exception as e:
+        logger.warning(f"Doğrulamalar DB'den çekilemedi: {e}")
+        db_claims = []
 
     cached = _active_states.get(session_id, {})
     final_state = cached.get("final_state", {})

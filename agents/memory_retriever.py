@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/memory_retriever.py
 Görevi: Semantic Memory Retriever Agent (Faz-6: pgvector Hafıza Katmanı)
 ==============================================================================
 Bu ajan, yeni bir araştırmada Paper Researcher çalışmadan önce devreye girer

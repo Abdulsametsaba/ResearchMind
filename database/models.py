@@ -57,9 +57,14 @@ class ResearchSession(Base):
     status: Mapped[str] = mapped_column(
         String(30),
         default="pending",
-        comment="pending, running, completed, failed"
+        comment="pending, running, cancelling, completed, failed, cancelled"
     )
     iteration_count: Mapped[int] = mapped_column(default=0)
+    result_summary: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=True,
+        comment="Persisted counts and evaluation metrics for completed research"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 

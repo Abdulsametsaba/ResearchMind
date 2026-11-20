@@ -90,19 +90,24 @@ async def update_session_status(
     session_id: str,
     status: str,
     iteration_count: int = 0,
+    result_summary: Optional[dict] = None,
 ) -> None:
     """
     Araştırma oturumunun durumunu ve iterasyon sayısını günceller.
-    Status değerleri: 'pending', 'running', 'completed', 'failed'
+    Status değerleri: 'pending', 'running', 'cancelling', 'completed', 'failed', 'cancelled'
     """
+    values = {
+        "status": status,
+        "iteration_count": iteration_count,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if result_summary is not None:
+        values["result_summary"] = result_summary
+
     stmt = (
         update(ResearchSession)
         .where(ResearchSession.id == session_id)
-        .values(
-            status=status,
-            iteration_count=iteration_count,
-            updated_at=datetime.now(timezone.utc),
-        )
+        .values(**values)
     )
     await db.execute(stmt)
     await db.commit()
@@ -274,6 +279,7 @@ async def save_report(
     db: AsyncSession,
     session_id: str,
     report: ResearchReport,
+    additional_metadata: Optional[dict] = None,
 ) -> ResearchReportModel:
     """
     Nihai araştırma raporunu veritabanına kaydeder.
@@ -308,6 +314,8 @@ async def save_report(
         "has_comparative_table": bool(report.comparative_analysis_markdown),
         "has_verification_matrix": bool(report.verification_matrix_markdown),
     }
+    if additional_metadata:
+        metadata.update(additional_metadata)
 
     if db_report:
         # Güncelle

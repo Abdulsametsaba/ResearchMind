@@ -47,16 +47,16 @@ Aşağıdaki JSON formatında yanıt ver, başka hiçbir şey yazma:
 {
   "decision": "IN_SCOPE" | "OUT_OF_SCOPE" | "NEEDS_CLARIFICATION",
   "reasoning": "Kararın kısa iç gerekçesi (kullanıcıya gösterilmez)",
-  "user_message": "Kullanıcıya gösterilecek nazik Türkçe mesaj (IN_SCOPE ise boş string)"
+  "user_message": "A polite message in the same language as [KULLANICI_SORUSU] (empty for IN_SCOPE)"
 }"""
 
-_SCOPE_GATE_USER_TEMPLATE = """Aşağıdaki kullanıcı isteğini değerlendir:
+_SCOPE_GATE_USER_TEMPLATE = """Evaluate the following user request:
 
 [KULLANICI_SORUSU]
 {query}
 [/KULLANICI_SORUSU]
 
-Yalnızca belirtilen JSON formatında yanıt ver."""
+Return the required JSON only. Write user_message in the same language as the user's request."""
 
 def create_scope_gate_prompt(query: str):
     """

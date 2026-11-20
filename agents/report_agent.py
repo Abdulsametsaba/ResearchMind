@@ -94,12 +94,10 @@ def clean_executive_summary(text: str) -> str:
 
 def clean_report_citations(text: str) -> str:
     """
-    Raporun teknik alt bölümlerindeki atıf sözdizimini akademik ve akıcı hale getirir.
+    Normalize citation syntax without adding language-specific prose.
     
     Örnekler:
       - '[20], [35]' -> '[20, 35]'
-      - '[20, 35]. Bu mimari dönüşüm...' -> 'İlgili araştırmalarda [20, 35], bu mimari dönüşüm...'
-      - '[1]. Model omurgası...' -> 'İlgili araştırmada [1], model omurgası...'
     """
     if not text:
         return ""
@@ -109,17 +107,7 @@ def clean_report_citations(text: str) -> str:
     while re.search(pattern_brackets, text):
         text = re.sub(pattern_brackets, r'[\1, \2]', text)
 
-    # 2. Cümle veya satır başında izole noktalı atıf varsa ('[20, 35]. Bu mimari...') bunu akıcı Türkçe yapıya dönüştür
-    def repl_leading_cite(m):
-        prefix = m.group(1) or ""
-        cites = m.group(2).strip()
-        first_char = m.group(3).lower()
-        word = "İlgili araştırmada" if ("," not in cites and "-" not in cites and "–" not in cites) else "İlgili araştırmalarda"
-        return f"{prefix}{word} [{cites}], {first_char}"
-
-    text = re.sub(r'(^|\n|[.!?]\s+)\[\s*([\d\s,-–]+)\s*\]\.\s+([A-ZÇĞİÖŞÜa-zçğıöşü])', repl_leading_cite, text)
-
-    # 3. Noktalama işaretlerinden önce oluşan gereksiz boşlukları toparla
+    # 2. Normalize punctuation without adding language-specific connective text.
     text = re.sub(r'\s+([.,;:!?])', r'\1', text)
     text = re.sub(r'[ \t]{2,}', ' ', text)
 
@@ -188,7 +176,7 @@ def _build_bibliography(
         authors_text = ", ".join(authors[:3]) if authors else "Yazar belirtilmemiş"
 
         if len(authors) > 3:
-            authors_text += " vd."
+            authors_text += " et al."
 
         citation = (
             f"{authors_text} ({year or 'Yıl belirtilmemiş'}). "
@@ -207,7 +195,7 @@ def _build_bibliography(
         title = _as_text(_value(source, "title", "Başlıksız web kaynağı"))
         url = _as_text(_value(source, "url", ""))
 
-        citation = f"{title}. Web kaynağı."
+        citation = f"{title}."
 
         if url:
             citation += f" {url}"
@@ -421,8 +409,8 @@ class ReportSynthesisOutput(BaseModel):
     """
     LLM tarafından oluşturulan rapor metni.
 
-    Karşılaştırma tablosu, doğrulama matrisi ve kaynakça
-    Python tarafında deterministik olarak oluşturulur.
+    Kaynak sıralaması ve tablo verileri deterministik olarak hazırlanır;
+    generated table text follows the language of the research question.
     """
 
     title: str = Field(
@@ -449,6 +437,21 @@ class ReportSynthesisOutput(BaseModel):
             "Kanıtlardan çıkarılabilen sınırlılıklar, açık problemler "
             "ve gelecekte araştırılabilecek yönler."
         )
+    )
+
+    comparative_analysis_markdown: str = Field(
+        default="",
+        description=(
+            "The supplied comparison table rewritten in the research question's language. "
+            "Preserve all figures, identifiers, citations, and source titles."
+        ),
+    )
+    verification_matrix_markdown: str = Field(
+        default="",
+        description=(
+            "The supplied claim-verification matrix with headings and generated prose in "
+            "the research question's language. Keep direct evidence quotations unchanged."
+        ),
     )
 
 
@@ -588,6 +591,8 @@ RAPOR ÜRETİM TALİMATI
 8. Eksik bilgileri ve kanıt sınırlarını açıkça belirt.
 9. Birbirini tekrar eden bölümler oluşturma.
 10. Kaynaklarda bulunmayan hiçbir teknik veya sayısal iddia ekleme.
+11. Write every generated field in the same language as the original research question above.
+12. Return the comparison table and verification matrix in that same language. Translate only headings and generated explanatory text; preserve numbers, IDs, citations, source names, and direct evidence quotations exactly.
 
 Çıktı yalnızca istenen yapılandırılmış rapor alanlarını içermelidir.
 """
@@ -613,8 +618,12 @@ RAPOR ÜRETİM TALİMATI
             title=synthesis.title.strip() or f"Araştırma Raporu: {query}",
             executive_summary=clean_executive_summary(synthesis.executive_summary.strip()),
             sections=sections_dict_list,
-            comparative_analysis_markdown=comp_table_md,
-            verification_matrix_markdown=verification_matrix_md,
+            comparative_analysis_markdown=(
+                synthesis.comparative_analysis_markdown.strip() or comp_table_md
+            ),
+            verification_matrix_markdown=(
+                synthesis.verification_matrix_markdown.strip() or verification_matrix_md
+            ),
             limitations_and_future_directions=clean_report_citations(
                 synthesis.limitations_and_future_directions.strip()
             ),

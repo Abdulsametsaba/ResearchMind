@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/api/routes/research.py
 Görevi: Araştırma İşlemleri REST API Endpoint'leri (Faz-5+6+7)
 ==============================================================================
 Endpoint'ler:
@@ -51,7 +50,16 @@ from agents.report_agent import clean_executive_summary
 from database.connection import get_db_session
 from database import service as db_service
 from database.models import ResearchSession
-from orchestrator.graph import get_research_graph
+from orchestrator.graph import (
+    ResearchCancelled,
+    clear_cancellation,
+    close_cancellation,
+    get_agent_events,
+    get_agent_progress,
+    get_research_graph,
+    register_cancellation,
+    request_cancellation,
+)
 from evaluation.metrics import calculate_research_metrics
 
 from tools.embeddings import (
@@ -68,10 +76,9 @@ router = APIRouter(prefix="/api/research", tags=["Research"])
 # ─── Uygulama genelinde paylaşılan state ─────────────────────────────────────
 
 # Çalışan asyncio.Task'larını tutan sözlük {session_id → Task}
-# İptal için task.cancel() çağrısında kullanılır
 _running_tasks: dict[str, asyncio.Task] = {}
 
-# Tamamlanan araştırma state'lerini tutan cache (metrik sorguları için)
+# Aktif işlem sürerken status ve metrik yanıtları için geçici state cache'i
 _active_states: dict[str, dict] = {}
 
 # LangGraph'ın senkron graph.invoke() çağrısını çalıştıran thread pool
@@ -141,6 +148,25 @@ async def _generate_and_save_embeddings(
         )
 
 
+def _build_result_summary(session_id: str, final_state: ResearchState) -> dict:
+    papers = final_state.get("academic_sources", [])
+    web_sources = final_state.get("web_sources", [])
+    verifications = final_state.get("claim_verifications", [])
+    return {
+        "academic_sources_count": len(papers),
+        "web_sources_count": len(web_sources),
+        "claim_verifications_count": len(verifications),
+        "is_research_sufficient": bool(
+            final_state.get("is_research_sufficient", False)
+        ),
+        "audit_log_count": len(final_state.get("audit_logs", [])),
+        "metrics": calculate_research_metrics(
+            session_id=session_id,
+            state=final_state,
+        ).model_dump(mode="json"),
+    }
+
+
 async def _persist_research_results(
     session_id: str,
     final_state: ResearchState,
@@ -159,6 +185,9 @@ async def _persist_research_results(
             verifications = final_state.get("claim_verifications", [])
             report        = final_state.get("final_report")
             iter_count    = final_state.get("iteration_count", 0)
+            result_summary = _build_result_summary(session_id, final_state)
+            result_summary["agent_statuses"] = get_agent_progress(session_id)
+            result_summary["agent_events"] = get_agent_events(session_id)
 
             if papers:
                 await db_service.save_academic_papers(db, session_id, papers)
@@ -167,9 +196,20 @@ async def _persist_research_results(
             if verifications:
                 await db_service.save_claim_verifications(db, session_id, verifications)
             if report:
-                await db_service.save_report(db, session_id, report)
+                await db_service.save_report(
+                    db,
+                    session_id,
+                    report,
+                    additional_metadata={"bibliography": report.bibliography},
+                )
 
-            await db_service.update_session_status(db, session_id, "completed", iter_count)
+            await db_service.update_session_status(
+                db,
+                session_id,
+                "completed",
+                iter_count,
+                result_summary=result_summary,
+            )
             logger.info(f"[{session_id[:8]}] Tüm sonuçlar DB'ye kaydedildi.")
 
         except Exception as e:
@@ -226,12 +266,15 @@ async def _run_research_background(
         config = {"configurable": {"thread_id": session_id}}
         loop   = asyncio.get_event_loop()
 
-        # LangGraph senkron invoke → thread pool'da çalıştır
-        # Bu await noktası iptal sinyalini (CancelledError) alabilir
+        # Synchronous nodes are allowed to finish; cancellation is checked at
+        # each graph-node boundary to avoid abandoning an active worker thread.
         final_state = await loop.run_in_executor(
             _executor,
             lambda: graph.invoke(initial_state, config=config),
         )
+
+        if close_cancellation(session_id):
+            raise ResearchCancelled()
 
         # State'i cache'e yaz (metrik sorguları için)
         _active_states[session_id] = {
@@ -243,27 +286,41 @@ async def _run_research_background(
         await _persist_research_results(session_id, final_state)
         logger.info(f"[{session_id[:8]}] Araştırma tamamlandı ve DB'ye kaydedildi.")
 
-    except asyncio.CancelledError:
-        # Kullanıcı iptal isteği gönderdi
+    except ResearchCancelled:
+        close_cancellation(session_id)
         logger.info(f"[{session_id[:8]}] Araştırma kullanıcı isteğiyle iptal edildi.")
         try:
             async for db in get_db_session():
                 await db_service.update_session_status(db, session_id, "cancelled")
         except Exception as db_err:
             logger.error(f"[{session_id[:8]}] İptal durumu DB'ye yazılamadı: {db_err}")
-        # CancelledError'ı yeniden fırlatma — task temiz şekilde sonlanır
 
-    except Exception as e:
-        logger.error(f"[{session_id[:8]}] Araştırma hatası: {e}", exc_info=True)
+    except asyncio.CancelledError:
+        logger.info(f"[{session_id[:8]}] Araştırma görevi uygulama kapanışıyla iptal edildi.")
         try:
             async for db in get_db_session():
-                await db_service.update_session_status(db, session_id, "failed")
+                await db_service.update_session_status(db, session_id, "cancelled")
+        except Exception as db_err:
+            logger.error(f"[{session_id[:8]}] İptal durumu DB'ye yazılamadı: {db_err}")
+
+    except Exception as e:
+        cancelled = close_cancellation(session_id)
+        terminal_status = "cancelled" if cancelled else "failed"
+        if cancelled:
+            logger.info(f"[{session_id[:8]}] Araştırma hata sırasında iptal isteği aldı.")
+        else:
+            logger.error(f"[{session_id[:8]}] Araştırma hatası: {e}", exc_info=True)
+        try:
+            async for db in get_db_session():
+                await db_service.update_session_status(db, session_id, terminal_status)
         except Exception as db_err:
             logger.error(f"[{session_id[:8]}] Hata durumu DB'ye yazılamadı: {db_err}")
 
     finally:
         # Her durumda izleme listesinden kaldır
         _running_tasks.pop(session_id, None)
+        clear_cancellation(session_id)
+        _active_states.pop(session_id, None)
         logger.debug(f"[{session_id[:8]}] Görev izleme listesinden kaldırıldı.")
 
 
@@ -344,7 +401,7 @@ async def start_research(
     await db_service.create_session(db, session_id, request.query)
     await db_service.update_session_status(db, session_id, "running")
 
-    # İptal edilebilir asyncio görev oluştur
+    register_cancellation(session_id)
     task = asyncio.create_task(
         _run_research_background(session_id, request.query, request.guidance),
         name=f"research-{session_id[:8]}",
@@ -376,8 +433,8 @@ async def start_research(
     summary="Çalışan Araştırmayı İptal Et",
     description=(
         "Belirtilen session_id'ye ait aktif araştırmayı iptal eder. "
-        "Yalnızca 'running' durumundaki araştırmalar iptal edilebilir. "
-        "İptal sonrası durum 'cancelled' olarak DB'ye kaydedilir."
+        "Devam eden senkron ajan adımı tamamlanınca yeni adımlar durdurulur. "
+        "Bu sırada durum 'cancelling', durduktan sonra 'cancelled' olur."
     ),
 )
 async def cancel_research(
@@ -387,11 +444,8 @@ async def cancel_research(
     """
     Çalışan araştırma görevini iptal eder.
 
-    İptal mantığı:
-      1. _running_tasks'ta görev varsa task.cancel() çağrılır
-      2. CancelledError, _run_research_background içinde yakalanır
-      3. DB durumu 'cancelled' olarak güncellenir
-      4. Görev finally bloğunda _running_tasks'tan silinir
+    The active synchronous agent step is allowed to finish; later steps are
+    stopped by the graph's cancellation checks.
     """
     # DB'den oturumu kontrol et
     session: Optional[ResearchSession] = await db_service.get_session(db, session_id)
@@ -415,27 +469,29 @@ async def cancel_research(
     # Aktif görev var mı?
     task = _running_tasks.get(session_id)
     if task is None or task.done():
-        # Görev listede değil ama DB'de running gösteriyor
-        # (örn. API yeniden başlatılmış olabilir) → DB'yi güncelle
         await db_service.update_session_status(db, session_id, "cancelled")
         logger.warning(
             f"[{session_id[:8]}] Aktif görev bulunamadı ama DB 'cancelled' olarak işaretlendi."
         )
     else:
-        # Görevi iptal et — CancelledError _run_research_background'da yakalanır
-        task.cancel()
-        logger.info(f"[{session_id[:8]}] İptal sinyali gönderildi.")
-        # DB güncellemesi _run_research_background'daki CancelledError handler'ı yapar
-        # Ama biz burada da anlık güncelleme yapalım (kullanıcı hızlı sorgularsa)
-        await db_service.update_session_status(db, session_id, "cancelled")
+        if session.status != "cancelling":
+            if not request_cancellation(session_id):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Araştırma sonlandırma aşamasına geçtiği için artık iptal edilemiyor.",
+                )
+            await db_service.update_session_status(db, session_id, "cancelling")
+        logger.info(f"[{session_id[:8]}] İptal isteği kaydedildi.")
 
     cancelled_at = datetime.now(timezone.utc)
+    cancellation_pending = task is not None and not task.done()
     return CancelResearchResponse(
         session_id=session_id,
-        status="cancelled",
+        status="cancelling" if cancellation_pending else "cancelled",
         message=(
-            f"Araştırma iptal isteği alındı. Devam eden ağ işlemleri "
-            f"birkaç saniye içinde sonlanacak."
+            "Araştırma, devam eden ajan adımı tamamlanınca durdurulacak."
+            if cancellation_pending
+            else "Araştırma iptal edildi."
         ),
         cancelled_at=cancelled_at,
     )
@@ -449,7 +505,7 @@ async def cancel_research(
 async def list_research_sessions(
     status: Optional[str] = Query(
         default=None,
-        description="Filtre: pending / running / completed / failed / cancelled",
+        description="Filtre: pending / running / cancelling / completed / failed / cancelled",
     ),
     limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db_session),
@@ -577,16 +633,45 @@ async def get_research_status(
     if not session:
         raise HTTPException(status_code=404, detail=f"Oturum bulunamadı: {session_id}")
 
-    cached       = _active_states.get(session_id, {})
-    final_state  = cached.get("final_state")
-
-    academic_count = len(final_state.get("academic_sources", [])) if final_state else 0
-    web_count      = len(final_state.get("web_sources", []))      if final_state else 0
-    claim_count    = len(final_state.get("claim_verifications", [])) if final_state else 0
-    is_sufficient  = final_state.get("is_research_sufficient", False) if final_state else False
-    audit_count    = len(final_state.get("audit_logs", []))       if final_state else 0
-
     db_report = await db_service.get_report(db, session_id)
+    result_summary = session.result_summary or {}
+    cached = _active_states.get(session_id, {})
+    final_state = cached.get("final_state")
+
+    if final_state:
+        academic_count = len(final_state.get("academic_sources", []))
+        web_count = len(final_state.get("web_sources", []))
+        claim_count = len(final_state.get("claim_verifications", []))
+        is_sufficient = final_state.get("is_research_sufficient", False)
+        audit_count = len(final_state.get("audit_logs", []))
+    else:
+        academic_count = result_summary.get("academic_sources_count")
+        web_count = result_summary.get("web_sources_count")
+        claim_count = result_summary.get("claim_verifications_count")
+        is_sufficient = result_summary.get("is_research_sufficient", False)
+        audit_count = result_summary.get("audit_log_count", 0)
+
+        if any(value is None for value in (academic_count, web_count, claim_count)):
+            academic_count = len(await db_service.get_papers_by_session(db, session_id))
+            web_count = len(await db_service.get_web_sources_by_session(db, session_id))
+            claim_count = len(await db_service.get_verifications_by_session(db, session_id))
+
+        academic_count = academic_count or 0
+        web_count = web_count or 0
+        claim_count = claim_count or 0
+        is_sufficient = bool(is_sufficient)
+        audit_count = audit_count or 0
+
+    if session.status in {"running", "cancelling"}:
+        agent_statuses = get_agent_progress(session_id)
+        agent_events = get_agent_events(session_id)
+    else:
+        agent_statuses = result_summary.get("agent_statuses") or (
+            {key: "completed" for key in get_agent_progress(session_id)}
+            if session.status == "completed"
+            else get_agent_progress(session_id)
+        )
+        agent_events = result_summary.get("agent_events", [])
 
     return ResearchStatusResponse(
         session_id=session_id,
@@ -598,9 +683,11 @@ async def get_research_status(
         claim_verifications_count=claim_count,
         is_research_sufficient=is_sufficient,
         created_at=session.created_at,
-        completed_at=session.updated_at if session.status in {"completed", "cancelled"} else None,
+        completed_at=session.updated_at if session.status in {"completed", "cancelled", "failed"} else None,
         audit_log_count=audit_count,
         has_report=bool(db_report),
+        agent_statuses=agent_statuses,
+        agent_events=agent_events,
     )
 
 
@@ -827,10 +914,20 @@ async def get_research_metrics(
             ),
         )
 
-    cached      = _active_states.get(session_id, {})
+    cached = _active_states.get(session_id, {})
     final_state = cached.get("final_state")
+    if final_state:
+        return calculate_research_metrics(session_id=session_id, state=final_state)
 
-    if not final_state:
+    result_summary = session.result_summary or {}
+    stored_metrics = result_summary.get("metrics")
+    if stored_metrics:
+        return EvaluationMetrics.model_validate(stored_metrics)
+
+    if not result_summary:
+        papers = await db_service.get_papers_by_session(db, session_id)
+        web_sources = await db_service.get_web_sources_by_session(db, session_id)
+        verifications = await db_service.get_verifications_by_session(db, session_id)
         return EvaluationMetrics(
             session_id=session_id,
             research_coverage_score=0.0,
@@ -839,10 +936,26 @@ async def get_research_metrics(
             factual_consistency_score=0.0,
             retrieval_recall=0.0,
             research_completion_rate=1.0,
-            total_sources=0,
-            total_claims_verified=0,
+            total_sources=len(papers) + len(web_sources),
+            total_claims_verified=sum(
+                1 for claim in verifications
+                if claim.verification_status == "VERIFIED"
+            ),
             iteration_count=session.iteration_count,
             overall_score=0.0,
         )
 
-    return calculate_research_metrics(session_id=session_id, state=final_state)
+    return EvaluationMetrics(
+        session_id=session_id,
+        research_coverage_score=0.0,
+        citation_accuracy_score=0.0,
+        source_quality_score=0.0,
+        factual_consistency_score=0.0,
+        retrieval_recall=0.0,
+        research_completion_rate=1.0,
+        total_sources=result_summary.get("academic_sources_count", 0)
+        + result_summary.get("web_sources_count", 0),
+        total_claims_verified=0,
+        iteration_count=session.iteration_count,
+        overall_score=0.0,
+    )

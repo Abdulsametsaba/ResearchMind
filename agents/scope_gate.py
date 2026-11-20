@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/scope_gate.py
 Görevi: Research Scope Gate — Araştırma Kapsamı Değerlendirici (Faz-7)
 ==============================================================================
 Bu modül, kullanıcının gönderdiği isteğin ResearchMind'ın amacıyla uyumlu
@@ -80,10 +79,9 @@ class ScopeGateResult(BaseModel):
     )
     user_message: str = Field(
         description=(
-            "Kullanıcıya gösterilecek nazik Türkçe mesaj. "
-            "IN_SCOPE ise boş bırak (''). "
-            "OUT_OF_SCOPE ise isteğin neden kapsam dışı olduğunu açıkla. "
-            "NEEDS_CLARIFICATION ise araştırma hedefini netleştiren TEK bir soru sor."
+            "A polite message in the same language as the user's request. "
+            "Leave empty for IN_SCOPE. Explain why an OUT_OF_SCOPE request is unsupported. "
+            "For NEEDS_CLARIFICATION, ask one question that clarifies the research goal."
         ),
         max_length=500
     )

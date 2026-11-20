@@ -18,7 +18,7 @@ tanımlar. Pydantic v2 ile tip güvenliği ve otomatik OpenAPI dokümantasyonu
 ==============================================================================
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -40,7 +40,7 @@ class ResearchRequest(BaseModel):
 class ResearchJobResponse(BaseModel):
     """Araştırma işi başlatıldığında dönen ilk yanıt."""
     session_id: str = Field(description="Araştırma oturumunun benzersiz kimliği")
-    status: str = Field(description="İşin mevcut durumu: queued, running, completed, failed, cancelled")
+    status: str = Field(description="İşin mevcut durumu: queued, running, cancelling, completed, failed, cancelled")
     message: str = Field(description="Kullanıcıya yönelik bilgilendirme mesajı")
     created_at: datetime = Field(description="Oturum oluşturulma zamanı (UTC)")
 
@@ -48,9 +48,9 @@ class ResearchJobResponse(BaseModel):
 class CancelResearchResponse(BaseModel):
     """Araştırma iptali yanıtı."""
     session_id: str = Field(description="İptal edilen araştırma oturumunun kimliği")
-    status: str = Field(default="cancelled", description="Her zaman 'cancelled' döner")
+    status: str = Field(description="cancelling veya cancelled")
     message: str = Field(description="İptal işlemi hakkında bilgi mesajı")
-    cancelled_at: datetime = Field(description="İptal zamanı (UTC)")
+    cancelled_at: datetime = Field(description="İptal isteği zamanı (UTC)")
 
 
 class ClaimVerificationSummary(BaseModel):
@@ -91,10 +91,18 @@ class WebSourceDetail(BaseModel):
     relevance_score: Optional[float] = 1.0
 
 
+class AgentProgressEvent(BaseModel):
+    """A timestamped transition for a visible research agent."""
+    sequence: int
+    agent_key: str
+    status: Literal["running", "completed", "failed"]
+    occurred_at: datetime
+
+
 class ResearchStatusResponse(BaseModel):
     """Araştırma durumu sorgulama yanıtı."""
     session_id: str
-    status: str = Field(description="pending, running, completed, failed, cancelled")
+    status: str = Field(description="pending, running, cancelling, completed, failed, cancelled")
     query: str
     iteration_count: int = Field(default=0)
     academic_sources_count: int = Field(default=0)
@@ -105,6 +113,10 @@ class ResearchStatusResponse(BaseModel):
     completed_at: Optional[datetime] = None
     audit_log_count: int = Field(default=0)
     has_report: bool = Field(default=False)
+    agent_statuses: Dict[
+        str, Literal["waiting", "running", "completed", "failed"]
+    ] = Field(default_factory=dict)
+    agent_events: List[AgentProgressEvent] = Field(default_factory=list)
 
 
 class ReportResponse(BaseModel):
@@ -162,7 +174,7 @@ class HealthResponse(BaseModel):
     """Sistem sağlık durumu yanıtı."""
     status: str = Field(description="healthy veya degraded")
     version: str = Field(default="0.4.0")
-    database: str = Field(description="connected, disconnected veya not_started")
+    database: str = Field(description="connected veya disconnected")
     gemini_api: str = Field(description="configured veya not_configured")
     tavily_api: str = Field(description="configured veya not_configured")
     uptime_seconds: Optional[float] = None

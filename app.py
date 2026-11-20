@@ -42,18 +42,22 @@ async def lifespan(app: FastAPI):
     logger.info(f"Planner Model: {settings.GEMINI_MODEL_PLANNER}")
     logger.info(f"Fast Model: {settings.GEMINI_MODEL_FAST}")
 
-    # Veritabanı kontrolü ve tablo başlatma
+    # A missing database is allowed during local startup, but schema migration
+    # failures must stop startup rather than leave database-backed endpoints broken.
     try:
         from database.connection import check_db_health, init_db
         db_ok, db_msg = await check_db_health()
-        if db_ok:
-            logger.info(f"Veritabanı: {db_msg}")
-            await init_db()
-            logger.info("Veritabanı tabloları doğrulandı/oluşturuldu.")
-        else:
-            logger.warning(f"Veritabanı bağlantısı yok: {db_msg}")
     except Exception as e:
         logger.warning(f"DB kontrolü sırasında hata: {e}")
+        db_ok = False
+        db_msg = str(e)
+
+    if db_ok:
+        logger.info(f"Veritabanı: {db_msg}")
+        await init_db()
+        logger.info("Veritabanı tabloları doğrulandı/oluşturuldu.")
+    else:
+        logger.warning(f"Veritabanı bağlantısı yok: {db_msg}")
 
     logger.info("ResearchMind API hazır. Swagger UI: http://localhost:8000/docs")
     yield

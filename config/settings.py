@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     # --- Araştırma Parametreleri ---
     MAX_SUB_QUESTIONS: int = Field(
         default=5,
+        ge=1,
         description="Bir araştırmada oluşturulabilecek maksimum alt soru sayısı"
     )
     MAX_ITERATIONS: int = Field(

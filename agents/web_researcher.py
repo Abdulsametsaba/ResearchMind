@@ -1,6 +1,5 @@
 """
 ==============================================================================
-Dosya: researchmind/agents/web_researcher.py
 Görevi: Web Araştırmacı Ajanı (Web Researcher Agent)
 ==============================================================================
 Bu ajan, araştırma planındaki pratik, güncel ve web odaklı alt soruları işler:
@@ -58,6 +57,8 @@ def conduct_web_research(state: ResearchState) -> dict:
                     seen_urls.add(src.url)
                     new_web_sources.append(src)
                     audit_messages.append(f"[Web Researcher] Kaynak eklendi: '{src.title[:50]}...'")
+
+        sq.status = "completed"
 
     if not new_web_sources:
         audit_messages.append("[Web Researcher] Tavily API anahtarı girilene kadar web taraması beklemede veya sonuç bulunamadı.")

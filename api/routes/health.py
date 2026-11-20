@@ -45,13 +45,13 @@ async def health_check() -> HealthResponse:
 
     # Veritabanı kontrolü
     db_ok, db_msg = await check_db_health()
-    db_status = "connected" if db_ok else ("not_started" if "Docker" in db_msg else "disconnected")
+    db_status = "connected" if db_ok else "disconnected"
 
     # API anahtarı kontrolleri
     gemini_ok = bool(settings.GEMINI_API_KEY and not settings.GEMINI_API_KEY.startswith("buraya_"))
     tavily_ok = bool(settings.TAVILY_API_KEY and not settings.TAVILY_API_KEY.startswith("buraya_"))
 
-    overall_status = "healthy" if (gemini_ok and tavily_ok) else "degraded"
+    overall_status = "healthy" if (db_ok and gemini_ok and tavily_ok) else "degraded"
 
     logger.info(f"Health check: DB={db_status}, Gemini={gemini_ok}, Tavily={tavily_ok}")
 

@@ -31,9 +31,12 @@ d) SINIRLILIKLAR VE SALDIRI MODELLERİ (Limitations & Future Directions):
    - Bir saldırı veya sızıntı iddiası (örn. yan kanal SCA veya hata enjeksiyonu FIA) varsa, bunu MUTLAKA ilgili saldırı modeline, hata türüne ve çalışma moduna bağlayarak açıkla (örn. deterministik mod vs rastgeleleştirilmiş mod).
 
 2. AKADEMİK ANLATIM VE DİL
+- Write the complete report in the same language as the user's original research question. Infer that language from the question itself; do not default to Turkish or English.
+- Apply this language consistently to the title, executive summary, section headings and prose, limitations, and translated table labels/content.
+- Keep source titles, URLs, identifiers, direct evidence quotations, technical names, and citation numbering unchanged where translation would alter source evidence.
 - Nesnel, profesyonel, akıcı ve analitik bir dil kullan.
 - Kaynakları tek tek özetlemek yerine ortak temaları sentezle.
-- Cümle başlarında izole noktalı atıf ('[1]. Bu mimari...') yapma; akıcı akademik Türkçe bağlaçlar kullan ('İlgili araştırmada [1]...', 'Elde edilen bulgular doğrultusunda [2, 3]...').
+- Avoid sentence-initial isolated citations such as '[1]. This architecture...'; use a fluent academic construction appropriate to the user's language.
 
 3. ATIF VE KAYNAK KULLANIMI
 - Sana verilen kaynak kataloğundaki numaraları kullan.

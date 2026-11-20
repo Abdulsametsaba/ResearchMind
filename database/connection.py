@@ -94,31 +94,16 @@ async def close_db() -> None:
 
 async def check_db_health() -> Tuple[bool, str]:
     """
-    Veritabanı bağlantısının sağlıklı olup olmadığını kontrol eder.
-    Docker konteyneri henüz çalışmıyorsa çökmek veya bekletmek yerine
-    hızlıca kullanıcı dostu mesaj döner.
+    Configured PostgreSQL connection is checked directly, regardless of how
+    the database is hosted.
     """
-    # 1. Docker servisi veya masaüstü uygulaması çalışıyor mu hızlıca kontrol et (1ms)
-    try:
-        import psutil
-        is_docker_running = any(
-            "docker" in p.info["name"].lower()
-            for p in psutil.process_iter(["name"])
-            if p.info["name"]
-        )
-        if not is_docker_running:
-            return False, "Docker Desktop henüz başlatılmamış. Veritabanını ayağa kaldırmak için Docker Desktop'ı açıp 'docker compose up -d' çalıştırabilirsiniz."
-    except Exception:
-        pass
-
-    # 2. Docker çalışıyorsa bağlantıyı test et
     try:
         engine = get_engine()
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         return True, "PostgreSQL bağlantısı başarılı ve çalışıyor."
     except Exception as e:
-        return False, f"PostgreSQL portu açık ancak sorgu çalıştırılamadı: {type(e).__name__} - {e}"
+        return False, f"PostgreSQL bağlantısı başarısız: {type(e).__name__} - {e}"
 
 
 async def init_db() -> None:
@@ -138,6 +123,11 @@ async def init_db() -> None:
         # Tüm modellerin tablolarını oluştur
         await conn.run_sync(Base.metadata.create_all)
         logger.info("Tüm veritabanı tabloları başarıyla oluşturuldu.")
+
+        await conn.execute(text(
+            "ALTER TABLE research_sessions "
+            "ADD COLUMN IF NOT EXISTS result_summary JSON;"
+        ))
 
         # ── Faz-6 Migration: Mevcut tablolara embedding sütunları ekle ──────────
         # CREATE TABLE IF NOT EXISTS mevcut tablolara yeni sütun eklemez;

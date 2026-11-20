@@ -31,8 +31,17 @@ logger = logging.getLogger("ResearchMind.Agents.Planner")
 class PlanResponse(BaseModel):
     rationale: str = Field(description="Araştırma stratejisinin genel mantığı ve kapsam özeti")
     sub_questions: List[SubQuestion] = Field(
-        description="Ana soruyu derinlemesine aydınlatacak 3-5 adet alt araştırma sorusu"
+        description="Ana soruyu derinlemesine aydınlatacak alt araştırma soruları"
     )
+
+
+def limit_sub_questions(
+    sub_questions: List[SubQuestion],
+    maximum: int,
+) -> List[SubQuestion]:
+    """Apply the configured upper bound to model and fallback plans alike."""
+    return sub_questions[:maximum]
+
 
 def plan_research(state: ResearchState) -> dict:
     """
@@ -56,7 +65,10 @@ def plan_research(state: ResearchState) -> dict:
     api_key = settings.GEMINI_API_KEY
     if not api_key or api_key.startswith("buraya_"):
         logger.warning("GEMINI_API_KEY tanımlanmamış, kural tabanlı varsayılan plan devreye sokuluyor.")
-        default_sub_questions = generate_heuristic_plan(query)
+        default_sub_questions = limit_sub_questions(
+            generate_heuristic_plan(query),
+            settings.MAX_SUB_QUESTIONS,
+        )
         return {
             "sub_questions": default_sub_questions,
             "current_subquestion_index": 0,
@@ -76,7 +88,10 @@ def plan_research(state: ResearchState) -> dict:
             HumanMessage(content=user_content)
         ])
 
-        sub_qs = response.sub_questions
+        sub_qs = limit_sub_questions(
+            response.sub_questions,
+            settings.MAX_SUB_QUESTIONS,
+        )
         # ID'lerin SQ-1, SQ-2 şeklinde sıralı olduğundan emin ol
         for idx, sq in enumerate(sub_qs, 1):
             if not sq.id or sq.id == "string":
@@ -91,7 +106,10 @@ def plan_research(state: ResearchState) -> dict:
 
     except Exception as e:
         logger.error(f"Planner Agent çalışırken hata oluştu: {e}. Heuristic plana geçiliyor.")
-        fallback_sub_questions = generate_heuristic_plan(query)
+        fallback_sub_questions = limit_sub_questions(
+            generate_heuristic_plan(query),
+            settings.MAX_SUB_QUESTIONS,
+        )
         return {
             "sub_questions": fallback_sub_questions,
             "current_subquestion_index": 0,

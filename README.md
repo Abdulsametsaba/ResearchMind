@@ -13,10 +13,12 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="ResearchMind dashboard" width="100%">
+  <img src="docs/screenshots/researchmind-preview.gif" alt="ResearchMind autonomous research workflow" width="100%">
 </p>
 
 ResearchMind is an autonomous multi-agent research platform. It analyzes a research request, formulates focused subquestions, searches academic and web sources, compares findings, verifies claims against evidence, and produces a cited report with measurable quality signals.
+
+ResearchMind goes beyond single-prompt LLM responses by coordinating specialized agents, iteratively investigating information gaps, and connecting research findings to verifiable evidence.
 
 The platform combines a React workspace with a FastAPI backend and a LangGraph agent workflow, while PostgreSQL with pgvector provides persistent research history and semantic source memory.
 
@@ -179,7 +181,7 @@ CROSS_ORIGIN=http://localhost:5173
 GEMINI_API_KEY=your_gemini_api_key
 GEMINI_MODEL_PLANNER=gemini-3.6-flash
 GEMINI_MODEL_FAST=gemini-3.1-flash-lite
-GEMINI_MODEL_EMBEDDING=models/text-embedding-004
+GEMINI_MODEL_EMBEDDING=gemini-embedding-001
 GEMINI_TEMPERATURE=0.2
 
 # Search providers
@@ -325,8 +327,6 @@ For the backend, configure all required API keys and database settings as enviro
 - [ ] Citation export in BibTeX, RIS, and CSL formats
 - [ ] Full-text PDF ingestion
 - [ ] Collaborative report editing
-- [ ] Automated benchmark and regression suites
-- [ ] Expanded source provenance and traceability
 
 ---
 
